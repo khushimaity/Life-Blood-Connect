@@ -17,7 +17,7 @@ import DonorDashboard from "./donor/DonorDashboard";
 import EmergencyRequest from "./admin/EmergencyRequest";
 import Donors from "./admin/Donors";
 import Requests from "./admin/Requests";
-import Inventory from "./admin/Inventory";
+import Inventory from "../public/InventoryTable.jsx";
 
 // donor sidebar
 import MyRequests from "./donor/MyRequests";
