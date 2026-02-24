@@ -1,49 +1,260 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { bloodRequestAPI } from "../api/services";
+import { BLOOD_GROUPS, REQUEST_REASONS, REQUEST_PRIORITIES } from '../constants';
 
 const EmergencyRequest = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    patient: "",
+    patientName: "",
     bloodGroup: "",
-    hospital: "",
+    hospitalName: "",
     reason: "",
+    reasonDetails: "",
+    priority: "Emergency",
+    requiredUnits: 1,
     neededBy: "",
-    contact: ""
+    contactPerson: {
+      name: "",
+      phone: "",
+      relationship: "Self"
+    },
+    location: {
+      city: "",
+      address: ""
+    }
   });
 
   const handleChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
+    const { name, value } = e.target;
+    
+    if (name.includes('.')) {
+      const [parent, child] = name.split('.');
+      setFormData(prev => ({
+        ...prev,
+        [parent]: {
+          ...prev[parent],
+          [child]: value
+        }
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
 
-    // TODO: Submit data to backend or save to localStorage/temp DB
-    console.log("Emergency Request Submitted:", formData);
-    alert("Emergency request submitted!");
-    setFormData({
-      patient: "",
-      bloodGroup: "",
-      hospital: "",
-      reason: "",
-      neededBy: "",
-      contact: ""
-    });
+    try {
+      // Validate phone number
+      if (!/^\d{10}$/.test(formData.contactPerson.phone)) {
+        toast.error('Contact number must be 10 digits');
+        setLoading(false);
+        return;
+      }
+
+      const response = await bloodRequestAPI.create({
+        ...formData,
+        requiredUnits: parseInt(formData.requiredUnits),
+        priority: 'Emergency'
+      });
+
+      if (response.data.success) {
+        toast.success('Emergency request submitted successfully!');
+        setTimeout(() => {
+          navigate('/requests');
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Error submitting request:', error);
+      toast.error(error.response?.data?.message || 'Failed to submit request');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white rounded-md shadow-md">
+      <ToastContainer position="top-right" autoClose={3000} />
       <h1 className="text-2xl font-bold mb-6 text-red-600">Post Emergency Request</h1>
+      
       <form onSubmit={handleSubmit} className="space-y-4">
-        <input type="text" name="patient" placeholder="Patient Name" value={formData.patient} onChange={handleChange} required className="w-full p-3 border rounded" />
-        <input type="text" name="bloodGroup" placeholder="Blood Group" value={formData.bloodGroup} onChange={handleChange} required className="w-full p-3 border rounded" />
-        <input type="text" name="hospital" placeholder="Hospital Name" value={formData.hospital} onChange={handleChange} required className="w-full p-3 border rounded" />
-        <input type="text" name="reason" placeholder="Reason for request" value={formData.reason} onChange={handleChange} required className="w-full p-3 border rounded" />
-        <input type="text" name="neededBy" placeholder="Needed By (e.g. Today, 5PM)" value={formData.neededBy} onChange={handleChange} required className="w-full p-3 border rounded" />
-        <input type="text" name="contact" placeholder="Contact Number" value={formData.contact} onChange={handleChange} required className="w-full p-3 border rounded" />
-        <button type="submit" className="bg-red-600 text-white px-6 py-3 rounded hover:bg-red-700">Submit Request</button>
+        <div>
+          <label className="block mb-1 font-medium">Patient Name *</label>
+          <input 
+            type="text" 
+            name="patientName" 
+            placeholder="Patient Name" 
+            value={formData.patientName} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Blood Group *</label>
+          <select 
+            name="bloodGroup" 
+            value={formData.bloodGroup} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          >
+            <option value="">Select Blood Group</option>
+            {BLOOD_GROUPS.map(group => (
+              <option key={group} value={group}>{group}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Hospital Name *</label>
+          <input 
+            type="text" 
+            name="hospitalName" 
+            placeholder="Hospital Name" 
+            value={formData.hospitalName} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Reason for Request *</label>
+          <select 
+            name="reason" 
+            value={formData.reason} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          >
+            <option value="">Select Reason</option>
+            {REQUEST_REASONS.map(reason => (
+              <option key={reason.value} value={reason.value}>
+                {reason.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Additional Details</label>
+          <textarea 
+            name="reasonDetails" 
+            placeholder="Provide any additional details..." 
+            value={formData.reasonDetails} 
+            onChange={handleChange} 
+            rows="3"
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Units Required *</label>
+          <input 
+            type="number" 
+            name="requiredUnits" 
+            min="1" 
+            max="10"
+            value={formData.requiredUnits} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Needed By *</label>
+          <input 
+            type="datetime-local" 
+            name="neededBy" 
+            value={formData.neededBy} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Hospital City *</label>
+          <input 
+            type="text" 
+            name="location.city" 
+            placeholder="City" 
+            value={formData.location.city} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Hospital Address</label>
+          <input 
+            type="text" 
+            name="location.address" 
+            placeholder="Full address" 
+            value={formData.location.address} 
+            onChange={handleChange} 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Contact Person Name *</label>
+          <input 
+            type="text" 
+            name="contactPerson.name" 
+            placeholder="Contact person name" 
+            value={formData.contactPerson.name} 
+            onChange={handleChange} 
+            required 
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">Contact Number *</label>
+          <input 
+            type="tel" 
+            name="contactPerson.phone" 
+            placeholder="10 digit mobile number" 
+            value={formData.contactPerson.phone} 
+            onChange={handleChange} 
+            required 
+            pattern="[0-9]{10}"
+            title="Please enter exactly 10 digits"
+            className="w-full p-3 border rounded focus:ring-2 focus:ring-red-300"
+            disabled={loading}
+          />
+        </div>
+
+        <button 
+          type="submit" 
+          disabled={loading}
+          className="w-full bg-red-600 text-white px-6 py-3 rounded hover:bg-red-700 transition disabled:opacity-50"
+        >
+          {loading ? 'Submitting...' : 'Submit Emergency Request'}
+        </button>
       </form>
     </div>
   );

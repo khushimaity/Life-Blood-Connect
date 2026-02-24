@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import axios from 'axios';
+import { CENTER_TYPES } from '../constants'; // Add this import
 
 const AdminRegistration = () => {
   const navigate = useNavigate();
@@ -203,12 +204,11 @@ const AdminRegistration = () => {
             disabled={loading}
           >
             <option value="">Select type</option>
-            <option value="Hospital">Hospital</option>
-            <option value="Blood Bank">Blood Bank</option>
-            <option value="Medical College">Medical College</option>
-            <option value="Clinic">Clinic</option>
-            <option value="NGO">NGO</option>
-            <option value="Other">Other</option>
+            {CENTER_TYPES.map(type => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
           </select>
         </div>
 

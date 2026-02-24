@@ -1,62 +1,132 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { bloodRequestAPI } from "../api/services";
+import { toast, ToastContainer } from 'react-toastify';
+import { BLOOD_GROUPS, REQUEST_PRIORITIES } from '../constants';
 
 function IncomingRequests() {
-  const [requests, setRequests] = useState([
-    {
-      id: 1,
-      requestor: 'Rahul V.',
-      bloodGroup: 'B+',
-      units: 2,
-      hospital: 'CityCare Hospital',
-    },
-    {
-      id: 2,
-      requestor: 'Priya S.',
-      bloodGroup: 'O-',
-      units: 1,
-      hospital: 'Green Valley Medical',
-    },
-  ]);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleAction = (id, action) => {
-    // Just simulate the action here
-    alert(`Request ${id} has been ${action}`);
-    setRequests(requests.filter((req) => req.id !== id));
+  useEffect(() => {
+    fetchIncomingRequests();
+  }, []);
+
+  const fetchIncomingRequests = async () => {
+    try {
+      setLoading(true);
+      const response = await bloodRequestAPI.getAll({ 
+        status: 'Pending',
+        limit: 20 
+      });
+      
+      if (response.data.success) {
+        setRequests(response.data.requests);
+      }
+    } catch (error) {
+      toast.error('Failed to load incoming requests');
+      console.error('Error fetching requests:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleAction = async (requestId, action) => {
+    try {
+      const newStatus = action === 'Accepted' ? 'Approved' : 'Cancelled';
+      
+      await bloodRequestAPI.updateStatus(requestId, { 
+        status: newStatus,
+        notes: `Request ${action.toLowerCase()} by admin`
+      });
+      
+      toast.success(`Request ${action} successfully`);
+      fetchIncomingRequests(); // Refresh the list
+    } catch (error) {
+      toast.error(`Failed to ${action} request`);
+      console.error('Error updating request:', error);
+    }
+  };
+
+  const getPriorityColor = (priority) => {
+    switch(priority) {
+      case 'Emergency': return 'bg-red-100 text-red-800 font-bold';
+      case 'Urgent': return 'bg-orange-100 text-orange-800';
+      default: return 'bg-green-100 text-green-800';
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-red-700">Incoming Blood Requests</h2>
+      <ToastContainer position="top-right" autoClose={3000} />
+      
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-red-700">Incoming Blood Requests</h2>
+        <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm">
+          {requests.length} Pending
+        </span>
+      </div>
 
       <div className="overflow-x-auto bg-white rounded shadow">
         <table className="min-w-full text-sm text-left border">
           <thead className="bg-red-100">
             <tr>
-              <th className="px-4 py-2">Requestor</th>
-              <th className="px-4 py-2">Needed Blood Group</th>
+              <th className="px-4 py-2">Request ID</th>
+              <th className="px-4 py-2">Patient</th>
+              <th className="px-4 py-2">Blood Group</th>
               <th className="px-4 py-2">Units</th>
               <th className="px-4 py-2">Hospital</th>
+              <th className="px-4 py-2">Priority</th>
+              <th className="px-4 py-2">Needed By</th>
               <th className="px-4 py-2">Action</th>
             </tr>
           </thead>
           <tbody>
             {requests.length > 0 ? (
               requests.map((req) => (
-                <tr key={req.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2">{req.requestor}</td>
-                  <td className="px-4 py-2">{req.bloodGroup}</td>
-                  <td className="px-4 py-2">{req.units}</td>
+                <tr key={req.requestId} className="border-t hover:bg-gray-50">
+                  <td className="px-4 py-2 font-mono text-sm">{req.requestId}</td>
+                  <td className="px-4 py-2">{req.patientName}</td>
+                  <td className="px-4 py-2 font-bold">{req.bloodGroup}</td>
+                  <td className="px-4 py-2">{req.quantity} units</td>
                   <td className="px-4 py-2">{req.hospital}</td>
+                  <td className="px-4 py-2">
+                    <span className={`px-2 py-1 rounded-full text-xs ${getPriorityColor(req.priority)}`}>
+                      {req.priority}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2">{formatDate(req.neededBy)}</td>
                   <td className="px-4 py-2 space-x-2">
                     <button
-                      onClick={() => handleAction(req.id, 'Accepted')}
-                      className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600"
+                      onClick={() => handleAction(req.requestId, 'Accepted')}
+                      className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition"
                     >
                       Accept
                     </button>
                     <button
-                      onClick={() => handleAction(req.id, 'Declined')}
-                      className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+                      onClick={() => handleAction(req.requestId, 'Declined')}
+                      className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
                     >
                       Decline
                     </button>
@@ -65,7 +135,9 @@ function IncomingRequests() {
               ))
             ) : (
               <tr>
-                <td colSpan="5" className="text-center py-4">No pending requests.</td>
+                <td colSpan="8" className="text-center py-8 text-gray-500">
+                  No pending requests found.
+                </td>
               </tr>
             )}
           </tbody>

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { BLOOD_GROUPS, GENDER_OPTIONS } from '../constants'; // Add this import
 
 const DonorRegistration = () => {
   const [formData, setFormData] = useState({
@@ -205,14 +206,9 @@ const DonorRegistration = () => {
             required
             disabled={loading}
           >
-            <option value="O+">O+</option>
-            <option value="A+">A+</option>
-            <option value="B+">B+</option>
-            <option value="AB+">AB+</option>
-            <option value="O-">O-</option>
-            <option value="A-">A-</option>
-            <option value="B-">B-</option>
-            <option value="AB-">AB-</option>
+            {BLOOD_GROUPS.map(group => (
+              <option key={group} value={group}>{group}</option>
+            ))}
           </select>
         </div>
 
@@ -227,9 +223,11 @@ const DonorRegistration = () => {
             disabled={loading}
           >
             <option value="">--Select Gender--</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Other">Other</option>
+            {GENDER_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
 
