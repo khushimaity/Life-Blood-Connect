@@ -119,7 +119,7 @@ function IncomingRequests() {
                   <td className="px-4 py-2">{formatDate(req.neededBy)}</td>
                   <td className="px-4 py-2 space-x-2">
                     <button
-                      onClick={() => handleAction(req.requestId, 'Accepted')}
+                      onClick={() => handleAction(req.id || req.requestId, 'Accepted')}
                       className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition"
                     >
                       Accept

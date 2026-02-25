@@ -132,7 +132,12 @@ const Donors = () => {
                     </td>
                     <td className="p-3">
                       <button className="text-blue-600 hover:underline text-sm mr-2">View</button>
-                      <button className="text-green-600 hover:underline text-sm">Contact</button>
+                      <button 
+                        onClick={() => window.location.href = `tel:${donor.userId?.phone}`}
+                        className="text-green-600 hover:underline text-sm"
+                      >
+                        Contact
+                      </button>
                     </td>
                   </tr>
                 ))

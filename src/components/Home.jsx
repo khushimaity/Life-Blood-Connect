@@ -1,7 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { emergencyAPI } from "../api/emergencyAPI";
+import axios from 'axios';
 import { toast } from 'react-toastify';
 
 const Home = () => {
@@ -13,49 +13,6 @@ const Home = () => {
     fetchEmergencyRequests();
   }, []);
 
-  // In your Home.jsx, update the emergency requests fetch
-  const fetchEmergencyRequests = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/api/blood-requests/emergency');
-      if (response.data.success) {
-        // If user is logged in, filter out requests they've accepted
-        const token = localStorage.getItem('token');
-        if (token) {
-          const user = JSON.parse(localStorage.getItem('user') || '{}');
-          const donorResponse = await axios.get('http://localhost:5000/api/donors/profile/me', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          
-          if (donorResponse.data.success) {
-            const donor = donorResponse.data.donor;
-            
-            // Get requests this donor has accepted
-            const acceptedResponse = await axios.get('http://localhost:5000/api/blood-requests/my-requests', {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            
-            const acceptedIds = acceptedResponse.data.requests
-              .filter(req => req.role === 'volunteer')
-              .map(req => req.id);
-            
-            // Filter out accepted requests
-            const filtered = response.data.requests.filter(
-              req => !acceptedIds.includes(req.requestId)
-            );
-            
-            setEmergencyRequests(filtered);
-          } else {
-            setEmergencyRequests(response.data.requests);
-          }
-        } else {
-          setEmergencyRequests(response.data.requests);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching emergency requests:', error);
-    }
-  };
-
   useEffect(() => {
     if (location.state?.scrollTo) {
       const target = document.getElementById(location.state.scrollTo);
@@ -65,9 +22,26 @@ const Home = () => {
     }
   }, [location]);
 
+  const fetchEmergencyRequests = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('http://localhost:5000/api/blood-requests/emergency');
+      
+      if (response.data.success) {
+        setEmergencyRequests(response.data.requests || []);
+      }
+    } catch (error) {
+      console.error('Error fetching emergency requests:', error);
+      toast.error('Failed to load emergency requests');
+      setEmergencyRequests([]); // Set empty array on error
+    } finally {
+      setLoading(false); // ALWAYS set loading to false
+    }
+  };
+
   return (
     <>
-      {/* Hero Section - Keep as is */}
+      {/* Hero Section */}
       <section
         className="min-h-screen bg-center bg-no-repeat flex flex-col items-center justify-center px-6 py-16 text-white text-center"
         style={{
@@ -89,7 +63,7 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Why Donate Section - Keep as is */}
+      {/* Why Donate Section */}
       <section className="flex flex-col px-6 py-12 text-left text-black max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold mb-4">Why Donate?</h1>
         <p className="text-lg leading-relaxed">
@@ -99,22 +73,32 @@ const Home = () => {
         </p>
       </section>
 
-      {/* Emergency Requests Section - NOW FROM DATABASE */}
+      {/* Emergency Requests Section */}
       <section className="px-6 py-12 bg-red-50 text-red-900 max-w-7xl mx-auto">
         <h2 className="text-2xl font-bold mb-4">⛑️ Emergency Requests</h2>
+        
         {loading ? (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
-            <p className="mt-2 text-gray-600">Loading emergency requests...</p>
+          <div className="flex justify-center items-center h-32">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
           </div>
         ) : emergencyRequests.length === 0 ? (
-          <p className="text-center py-8 bg-white rounded-lg shadow">No emergency requests at the moment.</p>
+          <div className="bg-white p-8 rounded-lg shadow-sm text-center">
+            <p className="text-gray-500">No emergency requests at the moment.</p>
+            <p className="text-sm text-gray-400 mt-2">Check back later or register as a donor to help.</p>
+          </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {emergencyRequests.map((req, index) => (
-              <div key={index} className="border p-4 rounded shadow-sm bg-white hover:shadow-md transition">
-                <h3 className="text-lg font-semibold">{req.patient} ({req.bloodGroup})</h3>
-                <p><strong>Hospital:</strong> {req.hospital}</p>
+              <div key={index} className="border-l-4 border-red-600 p-4 rounded shadow-sm bg-white hover:shadow-md transition">
+                <div className="flex justify-between items-start">
+                  <h3 className="text-lg font-semibold">
+                    {req.patient} ({req.bloodGroup})
+                  </h3>
+                  <span className="bg-red-100 text-red-600 px-2 py-1 rounded-full text-xs font-bold">
+                    EMERGENCY
+                  </span>
+                </div>
+                <p className="mt-2"><strong>Hospital:</strong> {req.hospital}</p>
                 <p><strong>Reason:</strong> {req.reason}</p>
                 <p><strong>Needed By:</strong> {req.neededBy}</p>
                 <p><strong>Contact:</strong> {req.contact}</p>
@@ -125,7 +109,7 @@ const Home = () => {
         )}
       </section>
 
-      {/* Donate CTA Section - Keep as is */}
+      {/* Donate CTA Section */}
       <section className="flex flex-col items-center px-6 py-12 text-center">
         <h1 className="text-3xl font-bold mb-6 text-black">Ready to make a difference?</h1>
         <div className="flex flex-wrap justify-center gap-6">
@@ -137,7 +121,7 @@ const Home = () => {
         </div>
       </section>
 
-      {/* About Us Section - Keep as is */}
+      {/* About Us Section */}
       <section id="about" className="px-6 py-12 mb-10 bg-[#fff8f8] text-[#1c0d0d] text-left max-w-7xl mx-auto">
         <h2 className="text-3xl font-bold mb-4">About Us</h2>
         <p className="text-lg leading-relaxed">
@@ -147,7 +131,7 @@ const Home = () => {
         </p>
       </section>
 
-      {/* Contact Section - Keep as is */}
+      {/* Contact Section */}
       <section id="contact" className="px-6 py-12 mb-10 bg-[#fbeeee] text-[#1c0d0d] text-left max-w-7xl mx-auto">
         <h2 className="text-3xl font-bold mb-4">Contact Us</h2>
         <p className="mb-2">Email: lifeblood@example.com</p>

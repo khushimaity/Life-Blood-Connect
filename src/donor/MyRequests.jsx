@@ -3,8 +3,10 @@ import DonorDashboardPage from "./DonorDashboardPage";
 import { bloodRequestAPI } from "../api/services";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { useAuth } from '../components/AuthContext'; // Add this import
 
 function MyRequests() {
+  const { user } = useAuth(); // Get current user for blood group
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
@@ -22,11 +24,13 @@ function MyRequests() {
       if (filter === 'my') {
         response = await bloodRequestAPI.getMyRequests();
         if (response.data.success) {
+          console.log('My requests:', response.data.requests); // Debug log
           setRequests(response.data.requests || []);
         }
       } else {
         response = await bloodRequestAPI.getAvailable();
         if (response.data.success) {
+          console.log('Available requests:', response.data.requests); // Debug log
           setRequests(response.data.requests || []);
         }
       }
@@ -51,9 +55,14 @@ function MyRequests() {
         // Remove from available requests
         setRequests(requests.filter(req => req.id !== id));
         
-        // Optionally switch to "My Requests" tab after a delay
+        // If the API returns the accepted request data, we could add it to state
+        // But since we're switching tabs, we'll just fetch again when switching
+        
+        // Switch to "My Requests" tab after a delay
         setTimeout(() => {
           setFilter('my');
+          // Force refresh when switching to my requests
+          fetchRequests();
         }, 2000);
       }
     } catch (error) {
@@ -196,6 +205,26 @@ function MyRequests() {
                         </span>
                       )}
                     </div>
+                    
+                    {/* 🔴 ADDED: Compatibility Badge for Available Requests */}
+                    {filter === 'available' && req.compatibility && (
+                      <div className="mb-3">
+                        {req.compatibility.type === 'exact' ? (
+                          <div className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium">
+                            <span>⭐</span> Perfect Match - Same Blood Type
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-medium">
+                            <span>✓</span> Compatible Donor
+                          </div>
+                        )}
+                        {req.bloodGroup !== user?.bloodGroup && (
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({user?.bloodGroup} → {req.bloodGroup})
+                          </span>
+                        )}
+                      </div>
+                    )}
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       <div className="flex items-center gap-2">
