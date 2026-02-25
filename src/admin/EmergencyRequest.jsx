@@ -4,6 +4,7 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { bloodRequestAPI } from "../api/services";
 import { BLOOD_GROUPS, REQUEST_REASONS, REQUEST_PRIORITIES } from '../constants';
+import axios from 'axios';
 
 const EmergencyRequest = () => {
   const navigate = useNavigate();
@@ -49,36 +50,92 @@ const EmergencyRequest = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      // Validate phone number
-      if (!/^\d{10}$/.test(formData.contactPerson.phone)) {
-        toast.error('Contact number must be 10 digits');
-        setLoading(false);
-        return;
-      }
-
-      const response = await bloodRequestAPI.create({
-        ...formData,
-        requiredUnits: parseInt(formData.requiredUnits),
-        priority: 'Emergency'
-      });
-
-      if (response.data.success) {
-        toast.success('Emergency request submitted successfully!');
-        setTimeout(() => {
-          navigate('/requests');
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Error submitting request:', error);
-      toast.error(error.response?.data?.message || 'Failed to submit request');
-    } finally {
+  try {
+    // Validate phone number
+    if (!/^\d{10}$/.test(formData.contactPerson.phone)) {
+      toast.error('Contact number must be 10 digits');
       setLoading(false);
+      return;
     }
-  };
+
+    // Log the form data
+    console.log('Form data before sending:', JSON.stringify(formData, null, 2));
+
+    // Prepare data EXACTLY as backend expects
+    const requestData = {
+      patientName: formData.patientName,
+      patientAge: null, // Optional - not in form
+      patientGender: null, // Optional - not in form
+      bloodGroup: formData.bloodGroup,
+      requiredUnits: parseInt(formData.requiredUnits),
+      componentType: 'Whole Blood',
+      hospitalName: formData.hospitalName,
+      location: {
+        city: formData.location.city,
+        address: formData.location.address || ''
+      },
+      contactPerson: {
+        name: formData.contactPerson.name,
+        phone: formData.contactPerson.phone,
+        relationship: formData.contactPerson.relationship || 'Self'
+      },
+      reason: formData.reason,
+      reasonDetails: formData.reasonDetails || '',
+      priority: 'Emergency',
+      neededBy: formData.neededBy ? new Date(formData.neededBy).toISOString() : new Date().toISOString(),
+      notes: formData.reasonDetails || ''
+    };
+
+    console.log('Sending to backend:', JSON.stringify(requestData, null, 2));
+
+    // Use the API service
+    const response = await bloodRequestAPI.create(requestData);
+    
+    console.log('Response from server:', response.data);
+
+    if (response.data.success) {
+      toast.success('Emergency request submitted successfully!');
+      setTimeout(() => {
+        navigate('/requests');
+      }, 2000);
+    }
+  } catch (error) {
+    console.error('Error submitting request:', error);
+    
+    // Detailed error logging
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      console.error('Error response data:', error.response.data);
+      console.error('Error response status:', error.response.status);
+      console.error('Error response headers:', error.response.headers);
+      
+      // Show specific error message
+      if (error.response.data.errors) {
+        const errorMessages = error.response.data.errors.map(e => e.msg).join('\n');
+        toast.error(errorMessages);
+      } else if (error.response.data.message) {
+        toast.error(error.response.data.message);
+      } else if (error.response.data.error) {
+        toast.error(error.response.data.error);
+      } else {
+        toast.error('Server error. Please check console.');
+      }
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received:', error.request);
+      toast.error('No response from server. Please check if backend is running.');
+    } else {
+      // Something happened in setting up the request
+      console.error('Request setup error:', error.message);
+      toast.error('Request failed. Please try again.');
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white rounded-md shadow-md">

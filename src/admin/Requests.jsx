@@ -123,7 +123,6 @@ const Requests = () => {
                 <th className="p-3 text-left">Priority</th>
                 <th className="p-3 text-left">Status</th>
                 <th className="p-3 text-left">Needed By</th>
-                <th className="p-3 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -146,15 +145,6 @@ const Requests = () => {
                       </span>
                     </td>
                     <td className="p-3">{new Date(req.neededBy).toLocaleDateString()}</td>
-                    <td className="p-3">
-                      <button className="text-blue-600 hover:underline text-sm mr-2">View</button>
-                      {req.status === 'Pending' && (
-                        <>
-                          <button className="text-green-600 hover:underline text-sm mr-2">Approve</button>
-                          <button className="text-red-600 hover:underline text-sm">Cancel</button>
-                        </>
-                      )}
-                    </td>
                   </tr>
                 ))
               ) : (

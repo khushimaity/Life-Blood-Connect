@@ -19,7 +19,9 @@ const DonorDashboard = () => {
       totalDonations: 0,
       totalUnits: 0,
       lastDonationDate: null
-    }
+    },
+    createdAt: null,
+    isEligible: false
   });
 
   useEffect(() => {
@@ -31,6 +33,11 @@ const DonorDashboard = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
       // Fetch donor profile
       const profileResponse = await axios.get('http://localhost:5000/api/donors/profile/me', {
         headers: { Authorization: `Bearer ${token}` }
@@ -45,17 +52,14 @@ const DonorDashboard = () => {
         const donor = profileResponse.data.donor;
         
         // Generate sequential donor ID based on registration order
-        // Format: LBD-000001 (6 digits, zero-padded)
         const generateDonorId = async () => {
           try {
-            // Get count of donors registered before this one
             const countResponse = await axios.get('http://localhost:5000/api/donors/count-before', {
               params: { donorId: donor._id },
               headers: { Authorization: `Bearer ${token}` }
             });
             
             if (countResponse.data.success) {
-              // Sequential number based on registration order
               const sequentialNumber = countResponse.data.count + 1;
               return `LBD-${String(sequentialNumber).padStart(6, '0')}`;
             }
@@ -63,12 +67,17 @@ const DonorDashboard = () => {
             console.error('Error getting donor count:', error);
           }
           
-          // Fallback: use timestamp if count API fails
+          // Fallback: use timestamp
           const timestamp = Date.now().toString().slice(-6);
           return `LBD-${timestamp}`;
         };
 
         const formattedDonorId = await generateDonorId();
+        
+        // Check if donor is eligible
+        const isEligible = donor.nextEligibleDate 
+          ? new Date(donor.nextEligibleDate) <= new Date()
+          : true;
         
         setDonorData({
           name: user?.name || donor.name || "Unknown",
@@ -87,12 +96,19 @@ const DonorDashboard = () => {
             totalUnits: donor.totalUnitsDonated || 0,
             lastDonationDate: donor.lastDonationDate
           },
-          createdAt: donor.createdAt
+          createdAt: donor.createdAt,
+          isEligible: isEligible
         });
       }
     } catch (error) {
       console.error('Error fetching donor data:', error);
-      toast.error('Failed to load dashboard data');
+      
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please login again.');
+        navigate('/login');
+      } else {
+        toast.error('Failed to load dashboard data');
+      }
     } finally {
       setLoading(false);
     }
@@ -139,15 +155,14 @@ const DonorDashboard = () => {
   }
 
   const donorLevel = getDonorLevel(donorData.stats.totalDonations);
-  const nextEligibilityDate = new Date(donorData.nextEligibility);
-  const isEligibleNow = donorData.nextEligibility !== "Not available" && nextEligibilityDate <= new Date();
+  const isEligibleNow = donorData.isEligible;
 
   return (
     <DonorDashboardPage>
       <main className="flex-1 px-8 py-10 bg-[#fffafa] min-h-screen overflow-auto">
         <h1 className="text-3xl font-bold text-[#1c0d0d] mb-6">Donor Dashboard</h1>
 
-        {/* Profile Section - No Image */}
+        {/* Profile Section */}
         <div className="bg-white rounded-xl shadow-md p-6 mb-8">
           <div className="flex flex-col md:flex-row items-center gap-6">
             <div className="text-center md:text-left flex-1">
@@ -205,12 +220,14 @@ const DonorDashboard = () => {
         <section className="mb-8">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold text-[#1c0d0d]">Recent Donation History</h3>
-            <button 
-              onClick={handleViewFullHistory}
-              className="text-red-600 hover:text-red-700 font-medium text-sm flex items-center gap-1"
-            >
-              View All <span>→</span>
-            </button>
+            {donorData.donationHistory.length > 0 && (
+              <button 
+                onClick={handleViewFullHistory}
+                className="text-red-600 hover:text-red-700 font-medium text-sm flex items-center gap-1"
+              >
+                View All <span>→</span>
+              </button>
+            )}
           </div>
           
           {donorData.donationHistory.length > 0 ? (
@@ -256,13 +273,6 @@ const DonorDashboard = () => {
             <div className="bg-white rounded-xl shadow-md p-12 text-center">
               <div className="text-6xl mb-4">🩸</div>
               <h4 className="text-xl font-semibold text-gray-700 mb-2">No Donation History Yet</h4>
-              <p className="text-gray-500 mb-6">Be the first to make a donation and save lives!</p>
-              <button 
-                onClick={handleScheduleDonation}
-                className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition"
-              >
-                Schedule Your First Donation
-              </button>
             </div>
           )}
         </section>
@@ -275,8 +285,12 @@ const DonorDashboard = () => {
               Next Eligibility
             </h3>
             <p className="text-gray-700">
-              You are eligible to donate blood again on{' '}
-              <strong className="text-red-600">{donorData.nextEligibility}</strong>
+              {donorData.nextEligibility !== "Not available" ? (
+                <>You are eligible to donate blood again on{' '}
+                <strong className="text-red-600">{donorData.nextEligibility}</strong></>
+              ) : (
+                'Eligibility date not available'
+              )}
             </p>
             {isEligibleNow && (
               <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-lg flex items-center gap-2">
@@ -330,7 +344,6 @@ const DonorDashboard = () => {
           </div>
         </section>
 
-        
         {/* Quick Info Banner */}
         {isEligibleNow && (
           <div className="mt-6 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl p-4 text-center">

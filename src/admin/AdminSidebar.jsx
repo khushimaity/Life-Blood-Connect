@@ -51,15 +51,27 @@ const handleLogout = () => {
           >
             <FaSearch /> Requests
           </Link>
-
           <Link
-            to="/inventory"
+            to="/post-request"
             className={`flex items-center gap-3 px-4 py-2 rounded-md font-medium ${
-              isActive("/inventory") ? "bg-[#fce9e9] text-[#1c0d0d]" : "text-[#522525] hover:bg-[#fce9e9]"
+              location.pathname === "/post-request" 
+                ? "bg-[#fce9e9] text-[#1c0d0d]" 
+                : "text-[#522525] hover:bg-[#fce9e9]"
             }`}
           >
-            <FaPlus /> Inventory
+            <FaPlus /> Post Request
           </Link>
+          <Link
+              to="/admin-profile"
+              className={`flex items-center gap-3 px-4 py-2 rounded-md font-medium ${
+                  location.pathname === "/admin-profile" 
+                      ? "bg-[#fce9e9] text-[#1c0d0d]" 
+                      : "text-[#522525] hover:bg-[#fce9e9]"
+              }`}
+          >
+              <FaUser /> My Profile
+          </Link>
+          
         </nav>
       </div>
 

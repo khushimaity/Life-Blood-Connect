@@ -16,7 +16,7 @@ export const donorAPI = {
   getProfile: () => axiosInstance.get('/donors/profile/me'),
   updateProfile: (data) => axiosInstance.put('/donors/profile', data),
   getDonationHistory: () => axiosInstance.get('/donors/donation-history'),
-  findDonors: (params) => axiosInstance.get('/donors/find/donors', { params }),
+  findDonors: (params) => axiosInstance.get('/donors/find', { params }),
   updateAvailability: (data) => axiosInstance.put('/donors/availability', data),
 };
 
@@ -24,6 +24,8 @@ export const donorAPI = {
 export const bloodRequestAPI = {
   getAll: (params) => axiosInstance.get('/blood-requests', { params }),
   getEmergency: () => axiosInstance.get('/blood-requests/emergency'),
+  getAvailable: () => axiosInstance.get('/blood-requests/available'),
+  acceptRequest: (id) => axiosInstance.post(`/blood-requests/${id}/accept`),
   create: (data) => axiosInstance.post('/blood-requests', data),
   getById: (id) => axiosInstance.get(`/blood-requests/${id}`),
   getMyRequests: () => axiosInstance.get('/blood-requests/my-requests'),

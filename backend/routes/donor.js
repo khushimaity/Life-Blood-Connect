@@ -9,13 +9,14 @@ const {
     findDonors,
     getDonationHistory,
     updateAvailability,
-    getNearbyDonors
+    getNearbyDonors,
+    getDonorCountBefore  // Make sure to import this if you have it
 } = require('../controllers/donorController');
 
 // All routes are protected
 router.use(protect);
 
-// Test route - ADD THIS
+// Test route
 router.get('/test', (req, res) => {
     res.json({ 
         success: true,
@@ -30,18 +31,27 @@ router.get('/test', (req, res) => {
     });
 });
 
-// Admin only routes
-router.get('/', authorize('admin'), getAllDonors);
-router.get('/:id', getDonorById);
+// ============= SPECIFIC ROUTES (must come before /:id) =============
 
-// Donor only routes
+// Donor only routes - specific paths
 router.get('/profile/me', authorize('donor'), getMyProfile);
 router.put('/profile', authorize('donor'), updateDonorProfile);
 router.get('/donation-history', authorize('donor'), getDonationHistory);
 router.put('/availability', authorize('donor'), updateAvailability);
 
-// Public access (but requires authentication)
-router.get('/find/donors', findDonors);
+// Public access routes (but requires authentication)
+router.get('/find', findDonors);  // Changed from '/find/donors' to '/find'
 router.get('/nearby', getNearbyDonors);
+
+// Add this if you have the count-before endpoint
+router.get('/count-before', authorize('donor'), getDonorCountBefore);
+
+// ============= PARAMETERIZED ROUTES (must come AFTER specific routes) =============
+
+// Get donor by ID - this must be LAST because it catches any route with a parameter
+router.get('/:id', getDonorById);
+
+// Admin only route for getting all donors
+router.get('/', authorize('admin'), getAllDonors);
 
 module.exports = router;

@@ -10,9 +10,12 @@ const {
     assignDonorToRequest,
     getEmergencyRequests,
     cancelBloodRequest,
-    getMyBloodRequests
+    getMyBloodRequests,
+    getAvailableRequests,  // Make sure this is imported
+    acceptBloodRequest      // Make sure this is imported
 } = require('../controllers/bloodRequestController');
-// Test route - ADD THIS
+
+// Test route
 router.get('/test', (req, res) => {
     res.json({ 
         success: true,
@@ -26,7 +29,6 @@ router.get('/test', (req, res) => {
     });
 });
 
-// Rest of the file remains the same...
 // Validation middleware
 const bloodRequestValidation = [
     body('patientName').notEmpty().withMessage('Patient name is required'),
@@ -48,14 +50,18 @@ router.use(protect);
 // Create request (both donors and admins)
 router.post('/', bloodRequestValidation, createBloodRequest);
 
-// Get requests based on role
-router.get('/', getAllBloodRequests);
+// IMPORTANT: SPECIFIC ROUTES MUST COME BEFORE PARAMETERIZED ROUTES
+router.get('/available', authorize('donor'), getAvailableRequests);
 router.get('/my-requests', authorize('donor'), getMyBloodRequests);
+
+// Parameterized routes (these must come AFTER specific routes)
 router.get('/:id', getBloodRequest);
+router.get('/', getAllBloodRequests);
 
 // Update/cancel requests
 router.put('/:id/status', authorize('admin'), updateRequestStatus);
 router.put('/:id/cancel', cancelBloodRequest);
+router.post('/:id/accept', authorize('donor'), acceptBloodRequest);
 
 // Admin only routes
 router.post('/:id/assign-donor', authorize('admin'), assignDonorToRequest);

@@ -18,13 +18,44 @@ exports.getDashboardStats = async (req, res) => {
             });
         }
 
-        // Get blood requests
-        const bloodRequests = await BloodRequest.find({
-            hospitalId: admin._id,
-            status: { $in: ['Pending', 'Approved', 'Processing'] }
+        // Get all blood requests for this hospital (not just pending)
+        const allRequests = await BloodRequest.find({
+            hospitalId: admin._id
         })
         .sort({ createdAt: -1 })
-        .limit(10);
+        .limit(20);
+
+        // Get counts by status
+        const requestCounts = await BloodRequest.aggregate([
+            { $match: { hospitalId: admin._id } },
+            { $group: {
+                _id: '$status',
+                count: { $sum: 1 }
+            }}
+        ]);
+
+        // Format request counts
+        const stats = {
+            total: 0,
+            pending: 0,
+            approved: 0,
+            processing: 0,
+            completed: 0,
+            cancelled: 0,
+            expired: 0
+        };
+
+        requestCounts.forEach(item => {
+            stats.total += item.count;
+            switch(item._id) {
+                case 'Pending': stats.pending = item.count; break;
+                case 'Approved': stats.approved = item.count; break;
+                case 'Processing': stats.processing = item.count; break;
+                case 'Completed': stats.completed = item.count; break;
+                case 'Cancelled': stats.cancelled = item.count; break;
+                case 'Expired': stats.expired = item.count; break;
+            }
+        });
 
         // Get inventory summary
         const inventory = await BloodInventory.aggregate([
@@ -38,27 +69,19 @@ exports.getDashboardStats = async (req, res) => {
 
         // Get recent donations
         const recentDonations = await Donation.find({ collectionCenter: admin._id })
-            .populate('donorId', 'name bloodGroup phone')
+            .populate('donorId', 'userId')
+            .populate('donorId.userId', 'name')
             .sort({ collectionDate: -1 })
             .limit(5);
 
         // Get donor count in admin's area
         const donorCount = await Donor.countDocuments({
             $or: [
-                { 'address.city': admin.location.city },
-                { 'collegeDetails.district': admin.location.district }
+                { 'address.city': admin.location?.city },
+                { 'collegeDetails.district': admin.location?.district }
             ],
             isActive: true
         });
-
-        // Get request stats
-        const requestStats = await BloodRequest.aggregate([
-            { $match: { hospitalId: admin._id } },
-            { $group: {
-                _id: '$status',
-                count: { $sum: 1 }
-            }}
-        ]);
 
         // Get today's appointments
         const today = new Date();
@@ -86,19 +109,22 @@ exports.getDashboardStats = async (req, res) => {
             organization: {
                 name: admin.organizationName,
                 type: admin.centerType,
-                location: `${admin.location.city}, ${admin.location.state}`,
+                location: admin.location ? `${admin.location.city || ''}, ${admin.location.state || ''}` : '',
                 isVerified: admin.isVerified,
                 rating: admin.stats.rating || 0
             },
             stats: {
-                totalRequests: admin.stats.totalRequests || 0,
-                fulfilledRequests: admin.stats.fulfilledRequests || 0,
+                totalRequests: stats.total,
+                pendingRequests: stats.pending,
+                approvedRequests: stats.approved,
+                processingRequests: stats.processing,
+                completedRequests: stats.completed,
+                fulfilledRequests: stats.completed, // Same as completed for now
                 activeDonors: donorCount,
                 totalCollections: admin.stats.totalCollections || 0,
-                rating: admin.stats.rating || 0,
                 todaysAppointments: todaysDonations,
-                fulfillmentRate: admin.stats.totalRequests > 0 ? 
-                    Math.round((admin.stats.fulfilledRequests / admin.stats.totalRequests) * 100) : 0
+                fulfillmentRate: stats.total > 0 ? 
+                    Math.round((stats.completed / stats.total) * 100) : 0
             },
             inventory: inventory.reduce((acc, item) => {
                 acc[item._id] = {
@@ -107,38 +133,35 @@ exports.getDashboardStats = async (req, res) => {
                 };
                 return acc;
             }, {}),
-            recentRequests: bloodRequests.map(request => ({
+            recentRequests: allRequests.map(request => ({
+                id: request._id,
                 requestId: request.requestId,
                 patientName: request.patientName,
                 bloodGroup: request.bloodGroup,
                 quantity: request.requiredUnits,
+                fulfilledUnits: request.fulfilledUnits || 0,
                 status: request.status,
                 neededBy: request.neededBy,
                 priority: request.priority,
-                createdAt: request.createdAt
+                createdAt: request.createdAt,
+                acceptedDonors: request.acceptedDonors?.length || 0
             })),
             recentDonations: recentDonations.map(donation => ({
                 donationId: donation.donationId,
-                donorName: donation.donorId?.name || 'Anonymous',
+                donorName: donation.donorId?.userId?.name || 'Anonymous',
                 bloodGroup: donation.bloodGroup,
                 units: donation.unitsCollected,
                 date: donation.collectionDate,
                 type: donation.donationType,
                 status: donation.status
             })),
-            requestStatus: requestStats.reduce((acc, stat) => {
-                acc[stat._id] = stat.count;
-                return acc;
-            }, {}),
+            requestStatus: stats,
             alerts: {
                 lowInventory: lowInventory.map(item => ({
                     bloodGroup: item.bloodGroup,
                     availableUnits: item.availableUnits
                 })),
-                pendingRequests: await BloodRequest.countDocuments({
-                    hospitalId: admin._id,
-                    status: 'Pending'
-                })
+                pendingRequests: stats.pending
             }
         };
 
@@ -201,9 +224,10 @@ exports.getAllCenters = async (req, res) => {
             name: center.organizationName,
             type: center.centerType,
             location: {
-                city: center.location.city,
-                state: center.location.state,
-                fullAddress: `${center.location.address || ''}, ${center.location.city}, ${center.location.state}`
+                city: center.location?.city,
+                state: center.location?.state,
+                fullAddress: center.location ? 
+                    `${center.location.address || ''}, ${center.location.city || ''}, ${center.location.state || ''}`.trim() : ''
             },
             phone: center.contactInfo?.phone?.[0] || '',
             email: center.contactInfo?.email?.[0] || '',
@@ -392,12 +416,10 @@ exports.getCenterDetails = async (req, res) => {
             collectionDate: { $gte: new Date() },
             status: 'Scheduled'
         })
-        .populate('donorId', 'name bloodGroup phone')
+        .populate('donorId', 'userId')
+        .populate('donorId.userId', 'name bloodGroup phone')
         .sort({ collectionDate: 1 })
         .limit(5);
-
-        // Get recent reviews/ratings
-        // (Assuming you have a Review model)
 
         const inventorySummary = {};
         inventory.forEach(item => {
@@ -424,14 +446,7 @@ exports.getCenterDetails = async (req, res) => {
                 category: center.centerCategory,
                 adminName: center.adminName,
                 description: center.description,
-                location: {
-                    address: center.location.address,
-                    city: center.location.city,
-                    district: center.location.district,
-                    state: center.location.state,
-                    pincode: center.location.pincode,
-                    coordinates: center.location.coordinates
-                },
+                location: center.location || {},
                 contact: center.contactInfo,
                 operatingHours: center.operatingHours,
                 facilities: center.facilities,
@@ -448,8 +463,8 @@ exports.getCenterDetails = async (req, res) => {
             inventory: inventorySummary,
             upcomingDonations: upcomingDonations.map(donation => ({
                 donationId: donation.donationId,
-                donorName: donation.donorId?.name || 'Anonymous',
-                bloodGroup: donation.donorId?.bloodGroup,
+                donorName: donation.donorId?.userId?.name || 'Anonymous',
+                bloodGroup: donation.donorId?.userId?.bloodGroup,
                 appointmentTime: donation.collectionDate,
                 type: donation.donationType,
                 status: donation.status
@@ -460,8 +475,7 @@ exports.getCenterDetails = async (req, res) => {
                 totalRequests: center.stats.totalRequests || 0,
                 fulfilledRequests: center.stats.fulfilledRequests || 0,
                 fulfillmentRate: center.stats.totalRequests > 0 ? 
-                    Math.round((center.stats.fulfilledRequests / center.stats.totalRequests) * 100) : 0,
-                averageResponseTime: center.stats.averageResponseTime || 0
+                    Math.round((center.stats.fulfilledRequests / center.stats.totalRequests) * 100) : 0
             }
         });
     } catch (error) {
@@ -485,7 +499,7 @@ exports.searchBlood = async (req, res) => {
             city, 
             state, 
             minUnits = 1,
-            maxDistance = 50 // in kilometers
+            maxDistance = 50
         } = req.query;
 
         if (!bloodGroup) {
@@ -556,14 +570,13 @@ exports.searchBlood = async (req, res) => {
                         id: centerId,
                         name: center.organizationName,
                         type: center.centerType,
-                        location: `${center.location.address || ''}, ${center.location.city}, ${center.location.state}`,
-                        city: center.location.city,
-                        state: center.location.state,
+                        location: center.location ? 
+                            `${center.location.address || ''}, ${center.location.city || ''}, ${center.location.state || ''}`.trim() : '',
+                        city: center.location?.city,
+                        state: center.location?.state,
                         phone: center.contactInfo?.phone?.[0] || '',
                         email: center.contactInfo?.email?.[0] || '',
-                        rating: center.stats?.rating || 0,
-                        fulfillmentRate: center.stats?.totalRequests > 0 ? 
-                            Math.round((center.stats.fulfilledRequests / center.stats.totalRequests) * 100) : 0
+                        rating: center.stats?.rating || 0
                     },
                     bloodUnits: []
                 };
@@ -592,30 +605,10 @@ exports.searchBlood = async (req, res) => {
         // Sort by total available units (descending)
         results.sort((a, b) => b.totalAvailableUnits - a.totalAvailableUnits);
 
-        // Filter by distance if coordinates are provided
-        let filteredResults = results;
-        if (req.query.lat && req.query.lng) {
-            const userLat = parseFloat(req.query.lat);
-            const userLng = parseFloat(req.query.lng);
-            const maxDistanceMeters = maxDistance * 1000;
-
-            filteredResults = results.filter(result => {
-                if (!result.center.coordinates) return false;
-                
-                const distance = calculateDistance(
-                    userLat, userLng,
-                    result.center.coordinates.coordinates[1],
-                    result.center.coordinates.coordinates[0]
-                );
-                
-                return distance <= maxDistance;
-            });
-        }
-
         res.status(200).json({
             success: true,
-            count: filteredResults.length,
-            totalUnits: filteredResults.reduce((sum, result) => sum + result.totalAvailableUnits, 0),
+            count: results.length,
+            totalUnits: results.reduce((sum, result) => sum + result.totalAvailableUnits, 0),
             filters: {
                 bloodGroup,
                 componentType,
@@ -623,7 +616,7 @@ exports.searchBlood = async (req, res) => {
                 state: state || 'All',
                 minUnits: parseInt(minUnits)
             },
-            results: filteredResults
+            results
         });
     } catch (error) {
         console.error('Search blood error:', error);
@@ -662,7 +655,7 @@ exports.getCenterAnalytics = async (req, res) => {
             });
         }
 
-        const { period = 'month' } = req.query; // day, week, month, year
+        const { period = 'month' } = req.query;
         const now = new Date();
         let startDate;
 
@@ -750,6 +743,35 @@ exports.getCenterAnalytics = async (req, res) => {
         });
     } catch (error) {
         console.error('Get center analytics error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
+        });
+    }
+};
+
+// @desc    Get admin profile
+// @route   GET /api/admin/profile
+// @access  Private/Admin
+exports.getAdminProfile = async (req, res) => {
+    try {
+        const admin = await Admin.findOne({ userId: req.user.id })
+            .populate('userId', 'name email phone');
+        
+        if (!admin) {
+            return res.status(404).json({
+                success: false,
+                message: 'Admin profile not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            admin
+        });
+    } catch (error) {
+        console.error('Get admin profile error:', error);
         res.status(500).json({
             success: false,
             message: 'Server error',

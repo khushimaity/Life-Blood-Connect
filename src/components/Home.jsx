@@ -13,17 +13,46 @@ const Home = () => {
     fetchEmergencyRequests();
   }, []);
 
+  // In your Home.jsx, update the emergency requests fetch
   const fetchEmergencyRequests = async () => {
     try {
-      const response = await emergencyAPI.getEmergencyRequests();
+      const response = await axios.get('http://localhost:5000/api/blood-requests/emergency');
       if (response.data.success) {
-        setEmergencyRequests(response.data.requests);
+        // If user is logged in, filter out requests they've accepted
+        const token = localStorage.getItem('token');
+        if (token) {
+          const user = JSON.parse(localStorage.getItem('user') || '{}');
+          const donorResponse = await axios.get('http://localhost:5000/api/donors/profile/me', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (donorResponse.data.success) {
+            const donor = donorResponse.data.donor;
+            
+            // Get requests this donor has accepted
+            const acceptedResponse = await axios.get('http://localhost:5000/api/blood-requests/my-requests', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            const acceptedIds = acceptedResponse.data.requests
+              .filter(req => req.role === 'volunteer')
+              .map(req => req.id);
+            
+            // Filter out accepted requests
+            const filtered = response.data.requests.filter(
+              req => !acceptedIds.includes(req.requestId)
+            );
+            
+            setEmergencyRequests(filtered);
+          } else {
+            setEmergencyRequests(response.data.requests);
+          }
+        } else {
+          setEmergencyRequests(response.data.requests);
+        }
       }
     } catch (error) {
       console.error('Error fetching emergency requests:', error);
-      toast.error('Failed to load emergency requests');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -90,11 +119,6 @@ const Home = () => {
                 <p><strong>Needed By:</strong> {req.neededBy}</p>
                 <p><strong>Contact:</strong> {req.contact}</p>
                 <p><strong>Units Needed:</strong> {req.unitsNeeded}</p>
-                <div className="mt-3">
-                  <Link to={`/request/${req.requestId}`} className="text-red-600 hover:underline text-sm font-medium">
-                    View Details →
-                  </Link>
-                </div>
               </div>
             ))}
           </div>

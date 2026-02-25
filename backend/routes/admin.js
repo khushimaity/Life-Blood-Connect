@@ -1,42 +1,34 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
-const {
-    getDashboardStats,
-    getAllCenters,
-    updateAdminProfile,
-    verifyAdminCenter,
-    getCenterDetails,
-    searchBlood
-} = require('../controllers/adminController');
+const adminController = require('../controllers/adminController'); // ← ADD THIS LINE!
 
-// Test route - ADD THIS
+// Test route
 router.get('/test', (req, res) => {
     res.json({ 
         success: true,
-        message: 'Admin API is working!',
-        endpoints: {
-            getAllCenters: 'GET /api/admin/centers',
-            getCenterDetails: 'GET /api/admin/center/:id',
-            searchBlood: 'GET /api/admin/search-blood',
-            dashboard: 'GET /api/admin/dashboard (protected, admin only)'
-        }
+        message: 'Admin API is working!'
     });
 });
 
 // Public routes
-router.get('/centers', getAllCenters);
-router.get('/center/:id', getCenterDetails);
-router.get('/search-blood', searchBlood);
+router.get('/centers', adminController.getAllCenters);
+router.get('/center/:id', adminController.getCenterDetails);
+router.get('/search-blood', adminController.searchBlood);
 
-// Admin only routes (protected)
+// Protected routes - require admin authentication
 router.use(protect);
 router.use(authorize('admin'));
 
-router.get('/dashboard', getDashboardStats);
-router.put('/profile', updateAdminProfile);
+// Profile routes
+router.get('/profile', adminController.getAdminProfile); // ← Now this will work
+router.put('/profile', adminController.updateAdminProfile);
 
-// Super admin only routes
-router.put('/verify/:id', authorize('admin'), verifyAdminCenter);
+// Dashboard and stats
+router.get('/dashboard', adminController.getDashboardStats);
+router.get('/analytics', adminController.getCenterAnalytics);
+
+// Center management
+router.put('/verify/:id', adminController.verifyAdminCenter);
 
 module.exports = router;

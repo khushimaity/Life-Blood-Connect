@@ -26,24 +26,48 @@ exports.createBloodRequest = async (req, res) => {
         } = req.body;
 
         // Check if user is admin or donor
-        let hospitalId = null;
+        let finalHospitalName = hospitalName;
+        let finalHospitalId = null;
+
         if (req.user.role === 'admin') {
             const admin = await Admin.findOne({ userId: req.user.id });
             if (admin) {
-                hospitalId = admin._id;
-                hospitalName = admin.organizationName;
+                finalHospitalId = admin._id;
+                finalHospitalName = admin.organizationName;
             }
         }
 
+        // Generate a unique requestId
+        // Generate a unique requestId in format REQ + 6 digits (e.g., REQ123456)
+const generateRequestId = async () => {
+    // Find the last request to get the latest ID
+    const lastRequest = await BloodRequest.findOne().sort({ createdAt: -1 });
+    
+    let nextNumber = 1;
+    if (lastRequest && lastRequest.requestId) {
+        // Extract the number from the last requestId (e.g., from REQ123456 get 123456)
+        const lastNumber = parseInt(lastRequest.requestId.replace('REQ', ''));
+        nextNumber = lastNumber + 1;
+    }
+    
+    // Pad with leading zeros to ensure 6 digits
+    const paddedNumber = nextNumber.toString().padStart(6, '0');
+    return `REQ${paddedNumber}`;
+};
+
+// In your createBloodRequest function, replace the requestId generation with:
+const requestId = await generateRequestId();
+
         const request = await BloodRequest.create({
+            requestId, // Now including the generated requestId
             patientName,
             patientAge,
             patientGender,
             bloodGroup,
             requiredUnits,
             componentType: componentType || 'Whole Blood',
-            hospitalName,
-            hospitalId,
+            hospitalName: finalHospitalName,
+            hospitalId: finalHospitalId,
             location,
             contactPerson: contactPerson || {
                 name: req.user.name,
@@ -53,7 +77,7 @@ exports.createBloodRequest = async (req, res) => {
             reason,
             reasonDetails,
             priority: priority || 'Normal',
-            neededBy: neededBy || new Date(Date.now() + 24 * 60 * 60 * 1000), // Default: tomorrow
+            neededBy: neededBy || new Date(Date.now() + 24 * 60 * 60 * 1000),
             requestedBy: req.user.id,
             status: 'Pending',
             statusHistory: [{
@@ -72,7 +96,8 @@ exports.createBloodRequest = async (req, res) => {
         console.error('Create blood request error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error'
+            message: 'Server error',
+            error: error.message
         });
     }
 };
@@ -208,6 +233,9 @@ exports.updateRequestStatus = async (req, res) => {
     try {
         const { status, notes } = req.body;
         
+        // Log for debugging
+        console.log('Updating request status:', { id: req.params.id, status, notes });
+        
         const request = await BloodRequest.findById(req.params.id);
         if (!request) {
             return res.status(404).json({
@@ -218,14 +246,70 @@ exports.updateRequestStatus = async (req, res) => {
 
         // Check if admin has permission
         const admin = await Admin.findOne({ userId: req.user.id });
-        if (!admin || request.hospitalId.toString() !== admin._id.toString()) {
+        if (!admin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Admin profile not found'
+            });
+        }
+
+        // Check if this request belongs to this admin's hospital
+        if (request.hospitalId && request.hospitalId.toString() !== admin._id.toString()) {
             return res.status(403).json({
                 success: false,
                 message: 'Not authorized to update this request'
             });
         }
 
-        await request.updateStatus(status, req.user.id, notes);
+        // Validate status transition
+        const validTransitions = {
+            'Pending': ['Approved', 'Cancelled'],
+            'Approved': ['Processing', 'Completed', 'Cancelled'],
+            'Processing': ['Completed', 'Cancelled'],
+            'Completed': [],
+            'Cancelled': [],
+            'Expired': []
+        };
+
+        if (!validTransitions[request.status]?.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot transition from ${request.status} to ${status}`
+            });
+        }
+
+        // Update the status
+        request.status = status;
+        
+        // Add to status history
+        if (!request.statusHistory) {
+            request.statusHistory = [];
+        }
+        
+        request.statusHistory.push({
+            status: status,
+            changedBy: req.user.id,
+            notes: notes || `Status updated to ${status}`,
+            changedAt: new Date()
+        });
+
+        // If status is Approved, update admin stats
+        if (status === 'Approved') {
+            admin.stats.totalRequests = (admin.stats.totalRequests || 0) + 1;
+            await admin.save();
+        }
+
+        // If status is Completed, update fulfilled stats
+        if (status === 'Completed') {
+            admin.stats.fulfilledRequests = (admin.stats.fulfilledRequests || 0) + 1;
+            await admin.save();
+        }
+
+        if (status === 'Completed') {
+            request.completedAt = new Date();
+        }
+
+        await request.save();
 
         res.status(200).json({
             success: true,
@@ -236,7 +320,8 @@ exports.updateRequestStatus = async (req, res) => {
         console.error('Update request status error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error'
+            message: 'Server error',
+            error: error.message
         });
     }
 };
@@ -408,36 +493,373 @@ exports.cancelBloodRequest = async (req, res) => {
     }
 };
 
-// @desc    Get my blood requests (for donor)
+// @desc    Get my blood requests (for donor) - includes both created and accepted
 // @route   GET /api/blood-requests/my-requests
 // @access  Private/Donor
 exports.getMyBloodRequests = async (req, res) => {
     try {
-        const requests = await BloodRequest.find({ requestedBy: req.user.id })
+        // Get donor info
+        const donor = await Donor.findOne({ userId: req.user.id });
+        
+        // Get requests created by this donor
+        const createdRequests = await BloodRequest.find({ requestedBy: req.user.id })
             .populate('hospitalId', 'organizationName location.city')
             .sort({ createdAt: -1 });
 
+        // Get requests this donor has accepted
+        let acceptedRequests = [];
+        if (donor) {
+            acceptedRequests = await BloodRequest.find({
+                'acceptedDonors.donorId': donor._id
+            })
+            .populate('hospitalId', 'organizationName location.city')
+            .sort({ 'acceptedDonors.acceptedAt': -1 });
+        }
+
+        // Format created requests
+        const formattedCreated = createdRequests.map(req => ({
+            id: req._id,
+            requestId: req.requestId,
+            patientName: req.patientName,
+            bloodGroup: req.bloodGroup,
+            requiredUnits: req.requiredUnits,
+            fulfilledUnits: req.fulfilledUnits,
+            hospital: req.hospitalName,
+            status: req.status,
+            neededBy: req.neededBy,
+            createdAt: req.createdAt,
+            priority: req.priority,
+            role: 'creator'
+        }));
+
+        // Format accepted requests
+        const formattedAccepted = acceptedRequests.map(req => {
+            const acceptedInfo = req.acceptedDonors.find(
+                a => a.donorId && a.donorId.toString() === donor._id.toString()
+            );
+            
+            return {
+                id: req._id,
+                requestId: req.requestId,
+                patientName: req.patientName,
+                bloodGroup: req.bloodGroup,
+                requiredUnits: req.requiredUnits,
+                fulfilledUnits: req.fulfilledUnits,
+                hospital: req.hospitalName,
+                status: 'Accepted',
+                neededBy: req.neededBy,
+                acceptedAt: acceptedInfo?.acceptedAt,
+                priority: req.priority,
+                role: 'volunteer'
+            };
+        });
+
+        // Combine and sort by date (most recent first)
+        const allRequests = [...formattedCreated, ...formattedAccepted].sort((a, b) => {
+            const dateA = a.acceptedAt || a.createdAt || a.neededBy;
+            const dateB = b.acceptedAt || b.createdAt || b.neededBy;
+            return new Date(dateB) - new Date(dateA);
+        });
+
         res.status(200).json({
             success: true,
-            count: requests.length,
-            requests: requests.map(request => ({
-                requestId: request.requestId,
-                patientName: request.patientName,
-                bloodGroup: request.bloodGroup,
-                requiredUnits: request.requiredUnits,
-                fulfilledUnits: request.fulfilledUnits,
-                hospital: request.hospitalName,
-                status: request.status,
-                neededBy: request.neededBy,
-                createdAt: request.createdAt,
-                priority: request.priority
-            }))
+            count: allRequests.length,
+            requests: allRequests
         });
     } catch (error) {
         console.error('Get my blood requests error:', error);
         res.status(500).json({
             success: false,
             message: 'Server error'
+        });
+    }
+};
+
+// @desc    Get available blood requests for donors to accept
+// @route   GET /api/blood-requests/available
+// @access  Private/Donor
+exports.getAvailableRequests = async (req, res) => {
+    try {
+        // Get donor info
+        const donor = await Donor.findOne({ userId: req.user.id });
+        
+        // Find requests that are:
+        // 1. Not created by this donor
+        // 2. Still pending or approved
+        // 3. Not expired
+        // 4. Not already fulfilled
+        // 5. Donor hasn't already accepted
+        const requests = await BloodRequest.find({
+            requestedBy: { $ne: req.user.id },
+            status: { $in: ['Pending', 'Approved'] },
+            neededBy: { $gte: new Date() },
+            $expr: { $lt: ["$fulfilledUnits", "$requiredUnits"] },
+            ...(donor && {
+                'acceptedDonors.donorId': { $ne: donor._id }
+            })
+        })
+        .populate('hospitalId', 'organizationName location.city')
+        .populate('requestedBy', 'name phone')
+        .sort({ priority: -1, neededBy: 1 })
+        .limit(20);
+
+        res.status(200).json({
+            success: true,
+            count: requests.length,
+            requests: requests.map(request => ({
+                id: request._id,
+                requestId: request.requestId,
+                patientName: request.patientName,
+                bloodGroup: request.bloodGroup,
+                requiredUnits: request.requiredUnits,
+                fulfilledUnits: request.fulfilledUnits,
+                remainingUnits: request.requiredUnits - request.fulfilledUnits,
+                hospital: request.hospitalName,
+                location: request.location?.city || '',
+                priority: request.priority,
+                neededBy: request.neededBy,
+                reason: request.reason,
+                contact: request.contactPerson?.phone
+            }))
+        });
+    } catch (error) {
+        console.error('Get available requests error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+};
+
+// @desc    Accept a blood request (donor volunteers)
+// @route   POST /api/blood-requests/:id/accept
+// @access  Private/Donor
+exports.acceptBloodRequest = async (req, res) => {
+    try {
+        const request = await BloodRequest.findById(req.params.id);
+        
+        if (!request) {
+            return res.status(404).json({
+                success: false,
+                message: 'Request not found'
+            });
+        }
+
+        // Check if request is still available
+        if (request.status !== 'Pending' && request.status !== 'Approved') {
+            return res.status(400).json({
+                success: false,
+                message: 'This request is no longer available'
+            });
+        }
+
+        if (request.fulfilledUnits >= request.requiredUnits) {
+            return res.status(400).json({
+                success: false,
+                message: 'This request has already been fulfilled'
+            });
+        }
+
+        if (request.neededBy < new Date()) {
+            return res.status(400).json({
+                success: false,
+                message: 'This request has expired'
+            });
+        }
+
+        // Get donor info
+        const donor = await Donor.findOne({ userId: req.user.id });
+        if (!donor) {
+            return res.status(404).json({
+                success: false,
+                message: 'Donor profile not found'
+            });
+        }
+
+        // Check if donor already accepted this request
+        const alreadyAccepted = request.acceptedDonors?.some(
+            d => d.donorId && d.donorId.toString() === donor._id.toString()
+        );
+        
+        if (alreadyAccepted) {
+            return res.status(400).json({
+                success: false,
+                message: 'You have already accepted this request'
+            });
+        }
+
+        // Initialize acceptedDonors array if it doesn't exist
+        if (!request.acceptedDonors) {
+            request.acceptedDonors = [];
+        }
+        
+        // Add donor to accepted donors
+        request.acceptedDonors.push({
+            donorId: donor._id,
+            acceptedAt: new Date(),
+            status: 'Volunteered'
+        });
+
+        await request.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'You have volunteered for this request. The hospital will contact you soon.',
+            requestId: request.requestId,
+            acceptedRequest: {
+                id: request._id,
+                requestId: request.requestId,
+                patientName: request.patientName,
+                bloodGroup: request.bloodGroup,
+                hospital: request.hospitalName,
+                reason: request.reason,
+                neededBy: request.neededBy,
+                priority: request.priority,
+                status: 'Accepted',
+                role: 'volunteer'
+            }
+        });
+
+    } catch (error) {
+        console.error('Accept request error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
+        });
+    }
+};
+
+// @desc    Get available blood requests for donors to accept
+// @route   GET /api/blood-requests/available
+// @access  Private/Donor
+exports.getAvailableRequests = async (req, res) => {
+    try {
+        // Get donor info
+        const donor = await Donor.findOne({ userId: req.user.id });
+        
+        // Find requests that are:
+        // 1. Not created by this donor
+        // 2. Still pending or approved
+        // 3. Not expired
+        // 4. Not already fulfilled
+        // 5. Donor hasn't already accepted
+        const requests = await BloodRequest.find({
+            requestedBy: { $ne: req.user.id }, // Not created by this donor
+            status: { $in: ['Pending', 'Approved'] },
+            neededBy: { $gte: new Date() },
+            $expr: { $lt: ["$fulfilledUnits", "$requiredUnits"] }, // Still need units
+            // Donor hasn't already accepted
+            ...(donor && {
+                'donors.donorId': { $ne: donor._id }
+            })
+        })
+        .populate('hospitalId', 'organizationName location.city')
+        .populate('requestedBy', 'name phone')
+        .sort({ priority: -1, neededBy: 1 })
+        .limit(20);
+
+        // Format for frontend
+        const formattedRequests = requests.map(request => ({
+            id: request._id,
+            requestId: request.requestId,
+            patientName: request.patientName,
+            bloodGroup: request.bloodGroup,
+            requiredUnits: request.requiredUnits,
+            fulfilledUnits: request.fulfilledUnits,
+            remainingUnits: request.requiredUnits - request.fulfilledUnits,
+            hospital: request.hospitalName,
+            location: request.location?.city || '',
+            priority: request.priority,
+            neededBy: request.neededBy,
+            reason: request.reason,
+            contactPhone: request.contactPerson?.phone,
+            requesterName: request.requestedBy?.name
+        }));
+
+        res.status(200).json({
+            success: true,
+            count: formattedRequests.length,
+            requests: formattedRequests
+        });
+    } catch (error) {
+        console.error('Get available requests error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
+        });
+    }
+};
+
+// @desc    Accept a blood request (donor volunteers)
+// @route   POST /api/blood-requests/:id/accept
+// @access  Private/Donor
+exports.acceptBloodRequest = async (req, res) => {
+    try {
+        const request = await BloodRequest.findById(req.params.id);
+        
+        if (!request) {
+            return res.status(404).json({
+                success: false,
+                message: 'Request not found'
+            });
+        }
+
+        // Check if request is still available
+        if (request.status !== 'Pending' && request.status !== 'Approved') {
+            return res.status(400).json({
+                success: false,
+                message: 'This request is no longer available'
+            });
+        }
+
+        if (request.fulfilledUnits >= request.requiredUnits) {
+            return res.status(400).json({
+                success: false,
+                message: 'This request has already been fulfilled'
+            });
+        }
+
+        if (request.neededBy < new Date()) {
+            return res.status(400).json({
+                success: false,
+                message: 'This request has expired'
+            });
+        }
+
+        // Get donor info
+        const donor = await Donor.findOne({ userId: req.user.id });
+        if (!donor) {
+            return res.status(404).json({
+                success: false,
+                message: 'Donor profile not found'
+            });
+        }
+
+        // Check if donor is eligible
+        if (!donor.isEligibleToDonate()) {
+            return res.status(400).json({
+                success: false,
+                message: 'You are not eligible to donate at this time'
+            });
+        }
+
+        // Here you could add the donor to a waiting list or notify the hospital
+        // For now, we'll just return success
+
+        res.status(200).json({
+            success: true,
+            message: 'You have volunteered for this request. The hospital will contact you soon.',
+            requestId: request.requestId
+        });
+
+    } catch (error) {
+        console.error('Accept request error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
         });
     }
 };

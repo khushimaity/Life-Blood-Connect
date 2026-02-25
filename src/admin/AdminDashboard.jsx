@@ -1,56 +1,30 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import AdminDashboardPage from "./AdminDashboardPage";
-import { adminAPI, bloodRequestAPI } from "../api/services";
+import { adminAPI } from "../api/services";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-const getStatusClass = (status) => {
-  switch (status) {
-    case "Pending":
-      return "bg-[#fce9e9] text-[#8b1c1c]";
-    case "Approved":
-      return "bg-[#fbeeee] text-[#2e7d32]";
-    case "Completed":
-      return "bg-[#f0f8f5] text-[#1a5d38]";
-    default:
-      return "bg-gray-100 text-gray-600";
-  }
-};
-
 const AdminDashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
-  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [processingId, setProcessingId] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
-    fetchBloodRequests();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
+      setLoading(true);
       const response = await adminAPI.getDashboard();
+      
       if (response.data.success) {
         setDashboardData(response.data.dashboard);
       }
     } catch (error) {
+      console.error('Error fetching dashboard:', error);
       toast.error('Failed to load dashboard data');
-    }
-  };
-
-  const fetchBloodRequests = async () => {
-    try {
-      const response = await bloodRequestAPI.getAll({
-        status: 'All',
-        limit: 10
-      });
-      if (response.data.success) {
-        setRequests(response.data.requests);
-      }
-    } catch (error) {
-      toast.error('Failed to load blood requests');
     } finally {
       setLoading(false);
     }
@@ -58,28 +32,58 @@ const AdminDashboard = () => {
 
   const handleStatusUpdate = async (requestId, newStatus) => {
     try {
-      await bloodRequestAPI.updateStatus(requestId, { status: newStatus });
-      toast.success(`Request ${newStatus.toLowerCase()} successfully`);
-      fetchBloodRequests(); // Refresh data
+      setProcessingId(requestId);
+      
+      const response = await bloodRequestAPI.updateStatus(requestId, { 
+        status: newStatus,
+        notes: `Status updated to ${newStatus} by admin`
+      });
+      
+      if (response.data.success) {
+        toast.success(`Request ${newStatus} successfully!`);
+        fetchDashboardData(); // Refresh data
+      }
     } catch (error) {
-      toast.error('Failed to update status');
+      console.error('Error updating status:', error);
+      toast.error(error.response?.data?.message || 'Failed to update status');
+    } finally {
+      setProcessingId(null);
     }
   };
 
-  const filteredRequests = requests.filter(request =>
-    request.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    request.bloodGroup.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    request.requestId.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const getStatusClass = (status) => {
+    switch (status) {
+      case "Pending":
+        return "bg-yellow-100 text-yellow-800";
+      case "Approved":
+        return "bg-green-100 text-green-800";
+      case "Processing":
+        return "bg-blue-100 text-blue-800";
+      case "Completed":
+        return "bg-purple-100 text-purple-800";
+      case "Cancelled":
+        return "bg-gray-100 text-gray-800";
+      default:
+        return "bg-gray-100 text-gray-600";
+    }
+  };
+
+  const getPriorityClass = (priority) => {
+    switch (priority) {
+      case "Emergency":
+        return "bg-red-100 text-red-800 font-bold";
+      case "Urgent":
+        return "bg-orange-100 text-orange-800";
+      default:
+        return "bg-blue-100 text-blue-800";
+    }
+  };
 
   if (loading) {
     return (
       <AdminDashboardPage>
-        <div className="p-8 w-full bg-[#fff8f8] min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading dashboard...</p>
-          </div>
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-red-600"></div>
         </div>
       </AdminDashboardPage>
     );
@@ -87,92 +91,146 @@ const AdminDashboard = () => {
 
   return (
     <AdminDashboardPage>
+      <ToastContainer position="top-right" autoClose={3000} />
       <div className="p-8 w-full bg-[#fff8f8] min-h-screen">
-        <ToastContainer position="top-right" autoClose={3000} />
-        
         <h1 className="text-3xl font-bold mb-6 text-[#1c0d0d]">Dashboard</h1>
 
-        {/* Stats Cards */}
-        {dashboardData && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="text-sm text-gray-500">Total Requests</h3>
-              <p className="text-2xl font-bold text-red-600">{dashboardData.stats.totalRequests}</p>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="text-sm text-gray-500">Fulfilled</h3>
-              <p className="text-2xl font-bold text-green-600">{dashboardData.stats.fulfilledRequests}</p>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="text-sm text-gray-500">Active Donors</h3>
-              <p className="text-2xl font-bold text-blue-600">{dashboardData.stats.activeDonors}</p>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="text-sm text-gray-500">Rating</h3>
-              <p className="text-2xl font-bold text-yellow-600">{dashboardData.stats.rating}/5</p>
-            </div>
+        {/* Organization Info */}
+        {dashboardData?.organization && (
+          <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+            <h2 className="text-xl font-semibold mb-2">{dashboardData.organization.name}</h2>
+            <p className="text-gray-600">{dashboardData.organization.type} • {dashboardData.organization.location}</p>
           </div>
         )}
 
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl shadow-lg p-6">
+            <div className="text-3xl font-bold mb-2">{dashboardData?.stats?.totalRequests || 0}</div>
+            <div className="text-sm opacity-90">Total Requests</div>
+          </div>
+          <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white rounded-xl shadow-lg p-6">
+            <div className="text-3xl font-bold mb-2">{dashboardData?.stats?.pendingRequests || 0}</div>
+            <div className="text-sm opacity-90">Pending</div>
+          </div>
+          <div className="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-xl shadow-lg p-6">
+            <div className="text-3xl font-bold mb-2">{dashboardData?.stats?.approvedRequests || 0}</div>
+            <div className="text-sm opacity-90">Approved</div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-xl shadow-lg p-6">
+            <div className="text-3xl font-bold mb-2">{dashboardData?.stats?.completedRequests || 0}</div>
+            <div className="text-sm opacity-90">Completed</div>
+          </div>
+          <div className="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl shadow-lg p-6">
+            <div className="text-3xl font-bold mb-2">{dashboardData?.stats?.totalAcceptedDonors || 0}</div>
+            <div className="text-sm opacity-90">Donors Accepted</div>
+          </div>
+        </div>
 
+        {/* Search */}
+        <div className="mb-8">
+          <input
+            type="text"
+            placeholder="Search requests by patient name or blood group..."
+            className="w-full p-4 rounded-md bg-white border border-gray-200 placeholder-gray-400 text-gray-700 outline-none focus:ring-2 focus:ring-red-300"
+          />
+        </div>
 
-        {/* Table */}
-        <h2 className="text-2xl font-semibold mb-4 text-[#1c0d0d]">Recent Blood Requests</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border border-[#f0caca] rounded-md overflow-hidden">
-            <thead>
-              <tr className="bg-[#fce9e9] text-[#1c0d0d]">
-                <th className="px-4 py-3">Request ID</th>
-                <th className="px-4 py-3">Patient Name</th>
-                <th className="px-4 py-3">Blood Group</th>
-                <th className="px-4 py-3">Quantity</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
+        {/* Requests Table */}
+        <h2 className="text-2xl font-semibold mb-4 text-[#1c0d0d]">Blood Requests</h2>
+        <div className="overflow-x-auto bg-white rounded-xl shadow-md">
+          <table className="w-full text-left">
+            <thead className="bg-red-50">
+              <tr>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Request ID</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Patient</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Blood Group</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Units</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Donors</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Priority</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Status</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Needed By</th>
+                <th className="px-4 py-3 text-sm font-semibold text-red-700">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {filteredRequests.length > 0 ? (
-                filteredRequests.map((req) => (
-                  <tr key={req.requestId} className="border-t border-[#f3d9d9] text-[#702f2f]">
-                    <td className="px-4 py-3">{req.requestId}</td>
-                    <td className="px-4 py-3">{req.patientName}</td>
-                    <td className="px-4 py-3 font-semibold">{req.bloodGroup}</td>
-                    <td className="px-4 py-3">{req.quantity} units</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-3 py-1 text-sm rounded-md font-medium ${getStatusClass(
-                          req.status
-                        )}`}
-                      >
-                        {req.status}
+            <tbody className="divide-y divide-gray-100">
+              {dashboardData?.recentRequests?.map((req) => (
+                <tr key={req.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-mono text-sm">{req.requestId}</td>
+                  <td className="px-4 py-3 font-medium">{req.patientName}</td>
+                  <td className="px-4 py-3">
+                    <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-bold">
+                      {req.bloodGroup}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {req.requiredUnits} 
+                    {req.fulfilledUnits > 0 && (
+                      <span className="text-green-600 text-xs ml-1">
+                        ({req.fulfilledUnits} filled)
                       </span>
-                    </td>
-                    <td className="px-4 py-3 space-x-2">
-                      <Link to={`/admin/request/${req.requestId}`} className="text-blue-600 hover:underline font-medium">
-                        View
-                      </Link>
-                      {req.status === 'Pending' && (
-                        <>
-                          <button 
-                            onClick={() => handleStatusUpdate(req.requestId, 'Approved')}
-                            className="text-green-600 hover:underline font-medium"
-                          >
-                            Approve
-                          </button>
-                          <button 
-                            onClick={() => handleStatusUpdate(req.requestId, 'Cancelled')}
-                            className="text-red-600 hover:underline font-medium"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              ) : (
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {req.acceptedDonors > 0 ? (
+                      <span className="text-green-600 font-medium">{req.acceptedDonors}</span>
+                    ) : (
+                      <span className="text-gray-400">0</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityClass(req.priority)}`}>
+                      {req.priority}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(req.status)}`}>
+                      {req.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    {new Date(req.neededBy).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3">
+                    {req.status === 'Pending' && (
+                      <button
+                        onClick={() => handleStatusUpdate(req.id, 'Approved')}
+                        disabled={processingId === req.id}
+                        className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition disabled:opacity-50 mr-2"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {req.status === 'Approved' && (
+                      <button
+                        onClick={() => handleStatusUpdate(req.id, 'Processing')}
+                        disabled={processingId === req.id}
+                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition disabled:opacity-50 mr-2"
+                      >
+                        Process
+                      </button>
+                    )}
+                    {req.status === 'Processing' && (
+                      <button
+                        onClick={() => handleStatusUpdate(req.id, 'Completed')}
+                        disabled={processingId === req.id}
+                        className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition disabled:opacity-50"
+                      >
+                        Complete
+                      </button>
+                    )}
+                    <Link 
+                      to={`/admin/request/${req.id}`}
+                      className="text-red-600 hover:text-red-800 text-sm font-medium ml-2"
+                    >
+                      View
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {(!dashboardData?.recentRequests || dashboardData.recentRequests.length === 0) && (
                 <tr>
-                  <td colSpan="6" className="px-4 py-3 text-center text-gray-500">
+                  <td colSpan="9" className="text-center py-8 text-gray-500">
                     No blood requests found
                   </td>
                 </tr>
@@ -185,7 +243,7 @@ const AdminDashboard = () => {
         <div className="mt-8 text-right">
           <Link to="/emergency-request">
             <button className="bg-red-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-red-700 transition">
-              Emergency Request
+              + Emergency Request
             </button>
           </Link>
         </div>
@@ -195,97 +253,3 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
-/*import React from "react";
-import { Link } from "react-router-dom";
-import AdminDashboardPage from "./AdminDashboardPage";
-
-const requests = [
-  { id: "REQ123", name: "Emily Carter", group: "A+", qty: "2 units", status: "Pending" },
-  { id: "REQ124", name: "David Lee", group: "O-", qty: "1 unit", status: "Approved" },
-  { id: "REQ125", name: "Sarah Jones", group: "B+", qty: "3 units", status: "Completed" },
-  { id: "REQ126", name: "Michael Brown", group: "AB+", qty: "1 unit", status: "Pending" },
-  { id: "REQ127", name: "Jessica Wilson", group: "A-", qty: "2 units", status: "Approved" },
-];
-
-const getStatusClass = (status) => {
-  switch (status) {
-    case "Pending":
-      return "bg-[#fce9e9] text-[#8b1c1c]";
-    case "Approved":
-      return "bg-[#fbeeee] text-[#2e7d32]";
-    case "Completed":
-      return "bg-[#f0f8f5] text-[#1a5d38]";
-    default:
-      return "bg-gray-100 text-gray-600";
-  }
-};
-
-const AdminDashboard = () => {
-  return (
-    <AdminDashboardPage>
-    <div className="p-8 w-full bg-[#fff8f8] min-h-screen">
-      <h1 className="text-3xl font-bold mb-6 text-[#1c0d0d]">Dashboard</h1>
-
-
-      <div className="mb-8">
-        <input
-          type="text"
-          placeholder="Search donor by blood group..."
-          className="w-full p-4 rounded-md bg-[#fbeeee] placeholder-[#a94442] text-[#a94442] outline-none"
-        />
-      </div>
-
- 
-      <h2 className="text-2xl font-semibold mb-4 text-[#1c0d0d]">Blood Requests</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border border-[#f0caca] rounded-md overflow-hidden">
-          <thead>
-            <tr className="bg-[#fce9e9] text-[#1c0d0d]">
-              <th className="px-4 py-3">Request ID</th>
-              <th className="px-4 py-3">Patient Name</th>
-              <th className="px-4 py-3">Blood Group</th>
-              <th className="px-4 py-3">Quantity</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {requests.map((req) => (
-              <tr key={req.id} className="border-t border-[#f3d9d9] text-[#702f2f]">
-                <td className="px-4 py-3">{req.id}</td>
-                <td className="px-4 py-3">{req.name}</td>
-                <td className="px-4 py-3 font-semibold">{req.group}</td>
-                <td className="px-4 py-3">{req.qty}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`px-3 py-1 text-sm rounded-md font-medium ${getStatusClass(
-                      req.status
-                    )}`}
-                  >
-                    {req.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <Link to={`/admin/request/${req.id}`} className="text-red-600 hover:underline font-medium">
-                    View
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-
-      <div className="mt-8 text-right">
-        <Link to="/emergency-request"><button className="bg-red-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-red-700 transition">
-          Emergency Request
-        </button></Link>
-      </div>
-    </div>
-    </AdminDashboardPage>
-  );
-};
-
-export default AdminDashboard;
-*/

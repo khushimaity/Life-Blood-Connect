@@ -17,14 +17,13 @@ import DonorDashboard from "./donor/DonorDashboard";
 import EmergencyRequest from "./admin/EmergencyRequest";
 import Donors from "./admin/Donors";
 import Requests from "./admin/Requests";
-import Inventory from "../public/InventoryTable.jsx";
+import PostRequest from "./admin/PostRequest"; // Add this import
+import AdminProfile from './admin/AdminProfile';
+
 
 // donor sidebar
 import MyRequests from "./donor/MyRequests";
 import DonorProfile from './donor/DonorProfile';
-
-
-
 
 function App() {
   return (
@@ -33,9 +32,9 @@ function App() {
         <Header />
         
         {/* Main Content Area */}
-        <div className="flex-grow ">
-          
+        <div className="flex-grow">
           <Routes>
+            {/* Public Routes */}
             <Route path="/" element={<Home />} />
             <Route path="/home" element={<Home />} />
             <Route path="/learn-more" element={<LearnMore />} />
@@ -43,12 +42,15 @@ function App() {
             <Route path="/register" element={<DonorRegistration />} />
             <Route path="/login" element={<DonorLogin />} />
 
+            {/* Admin Routes */}
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
             <Route path="/emergency-request" element={<EmergencyRequest />} />
+            <Route path="/post-request" element={<PostRequest />} />
             <Route path="/donors" element={<Donors />} />
             <Route path="/requests" element={<Requests />} />
-            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/admin-profile" element={<AdminProfile />} />
 
+            {/* Donor Routes */}
             <Route path="/donor-dashboard" element={<DonorDashboard />} />
             <Route path="/donor-profile" element={<DonorProfile />} />
             <Route path="/my-requests" element={<MyRequests />} />

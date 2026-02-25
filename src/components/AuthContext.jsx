@@ -89,27 +89,37 @@ const registerDonor = async (formData) => {
     }
 };
     // LOGIN FUNCTION
+    // In your AuthContext.jsx, update the login function:
+
     const login = async (email, password, isAdmin = false) => {
-        try {
-            const response = await API.post('/auth/login', {
-                email,
-                password,
-                isAdmin
-            });
-            
-            if (response.data.success) {
-                const { token, user } = response.data;
-                localStorage.setItem('token', token);
-                setUser(user);
-                setIsLoggedIn(true);
-                return { success: true, user };
-            }
-        } catch (error) {
-            return { 
-                success: false, 
-                message: error.response?.data?.message || 'Login failed' 
-            };
+    try {
+        console.log('AuthContext login called with:', { email, isAdmin });
+        
+        const response = await axios.post('http://localhost:5000/api/auth/login', {
+        email,
+        password,
+        isAdmin
+        });
+        
+        console.log('Login response:', response.data);
+        
+        if (response.data.success) {
+        const { token, user } = response.data;
+        localStorage.setItem('token', token);
+        setUser(user);
+        setIsLoggedIn(true);
+        return { success: true, user };
         }
+    } catch (error) {
+        console.error('AuthContext login error:', error);
+        console.error('Error response:', error.response?.data);
+        
+        // Return the error message from backend
+        return { 
+        success: false, 
+        message: error.response?.data?.message || 'Login failed. Please try again.'
+        };
+    }
     };
 
     const logout = () => {

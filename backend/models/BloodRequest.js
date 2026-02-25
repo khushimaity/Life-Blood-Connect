@@ -129,6 +129,25 @@ const bloodRequestSchema = new mongoose.Schema({
         donationDate: Date
     }],
     
+    // NEW: Track donors who have volunteered/accepted the request
+    acceptedDonors: [{
+        donorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Donor',
+            required: true
+        },
+        acceptedAt: {
+            type: Date,
+            default: Date.now
+        },
+        status: {
+            type: String,
+            enum: ['Volunteered', 'Scheduled', 'Donated', 'Cancelled'],
+            default: 'Volunteered'
+        },
+        notes: String
+    }],
+    
     // Requestor Information (if registered user)
     requestedBy: {
         type: mongoose.Schema.Types.ObjectId,
@@ -197,11 +216,24 @@ bloodRequestSchema.virtual('urgencyLevel').get(function() {
     return 'low';
 });
 
+// Virtual to check if a specific donor has accepted
+bloodRequestSchema.methods.hasDonorAccepted = function(donorId) {
+    return this.acceptedDonors?.some(
+        d => d.donorId && d.donorId.toString() === donorId.toString()
+    );
+};
+
+// Virtual to get accepted donors count
+bloodRequestSchema.virtual('acceptedDonorsCount').get(function() {
+    return this.acceptedDonors?.length || 0;
+});
+
 // Indexes
 bloodRequestSchema.index({ bloodGroup: 1, status: 1 });
 bloodRequestSchema.index({ hospitalId: 1, createdAt: -1 });
 bloodRequestSchema.index({ neededBy: 1 });
 bloodRequestSchema.index({ "location.city": 1, status: 1 });
+bloodRequestSchema.index({ "acceptedDonors.donorId": 1 }); // Index for faster queries
 
 // Update status and add to history
 bloodRequestSchema.methods.updateStatus = async function(newStatus, changedBy, notes = '') {
@@ -218,6 +250,46 @@ bloodRequestSchema.methods.updateStatus = async function(newStatus, changedBy, n
     }
     
     return await this.save();
+};
+
+// Method to add a donor to accepted list
+bloodRequestSchema.methods.addAcceptedDonor = async function(donorId, notes = '') {
+    if (!this.acceptedDonors) {
+        this.acceptedDonors = [];
+    }
+    
+    // Check if already accepted
+    const alreadyAccepted = this.acceptedDonors.some(
+        d => d.donorId && d.donorId.toString() === donorId.toString()
+    );
+    
+    if (alreadyAccepted) {
+        throw new Error('Donor has already accepted this request');
+    }
+    
+    this.acceptedDonors.push({
+        donorId: donorId,
+        acceptedAt: new Date(),
+        status: 'Volunteered',
+        notes: notes
+    });
+    
+    return await this.save();
+};
+
+// Method to update accepted donor status
+bloodRequestSchema.methods.updateAcceptedDonorStatus = async function(donorId, newStatus, notes = '') {
+    const donorEntry = this.acceptedDonors?.find(
+        d => d.donorId && d.donorId.toString() === donorId.toString()
+    );
+    
+    if (donorEntry) {
+        donorEntry.status = newStatus;
+        if (notes) donorEntry.notes = notes;
+        return await this.save();
+    }
+    
+    throw new Error('Donor not found in accepted list');
 };
 
 module.exports = mongoose.model('BloodRequest', bloodRequestSchema);
