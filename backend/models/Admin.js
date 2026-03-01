@@ -62,7 +62,7 @@ const adminSchema = new mongoose.Schema({
     // License & Registration
     licenseNumber: {
     type: String,
-    unique: true,
+    unique: false,
     sparse: true,  // ← ADD THIS - allows multiple null values
     default: null
     },

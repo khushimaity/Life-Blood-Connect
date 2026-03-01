@@ -85,6 +85,9 @@ exports.registerDonor = async (req, res) => {
 // @desc    Register a new admin/hospital
 // @route   POST /api/auth/register/admin
 // @access  Public
+// @desc    Register a new admin/hospital
+// @route   POST /api/auth/register/admin
+// @access  Public
 exports.registerAdmin = async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -92,7 +95,26 @@ exports.registerAdmin = async (req, res) => {
             return res.status(400).json({ errors: errors.array() });
         }
 
-        const { adminName, organizationName, email, password, phone, ...adminData } = req.body;
+        // ✅ DESTRUCTURE ALL FIELDS explicitly
+        const { 
+            adminName, 
+            organizationName, 
+            email, 
+            password, 
+            phone, 
+            centerType,      // ← ADD THIS
+            location,        // ← ADD THIS
+            ...adminData     // ← Any additional fields
+        } = req.body;
+
+        console.log('Registration data received:', { 
+            adminName, 
+            organizationName, 
+            email, 
+            phone, 
+            centerType,
+            location 
+        });
 
         // Check if user exists
         const userExists = await User.findOne({ email });
@@ -112,13 +134,24 @@ exports.registerAdmin = async (req, res) => {
             role: 'admin'
         });
 
-        // Create admin profile
+        console.log('User created successfully:', user._id);
+
+        // Create admin profile with ALL fields
         const admin = await Admin.create({
             userId: user._id,
             adminName,
             organizationName,
+            centerType,                    // ← NOW INCLUDED
+            location: location || {        // ← NOW INCLUDED with fallback
+                city: '',
+                district: '',
+                state: '',
+                address: ''
+            },
             ...adminData
         });
+
+        console.log('Admin profile created successfully:', admin._id);
 
         // Generate token
         const token = generateToken(user._id, user.role);
@@ -141,6 +174,18 @@ exports.registerAdmin = async (req, res) => {
         });
     } catch (error) {
         console.error('Register admin error:', error);
+        
+        // If admin creation failed but user was created, clean up
+        if (error.name === 'ValidationError' || error.code === 11000) {
+            // Try to delete the user if it was created
+            try {
+                const user = await User.findOne({ email: req.body.email });
+                if (user) await User.findByIdAndDelete(user._id);
+            } catch (cleanupError) {
+                console.error('Cleanup error:', cleanupError);
+            }
+        }
+
         res.status(500).json({
             success: false,
             message: 'Server error',
