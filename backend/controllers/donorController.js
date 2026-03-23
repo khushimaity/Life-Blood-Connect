@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const Donor = require('../models/Donor');
 const User = require('../models/User');
 const BloodRequest = require('../models/BloodRequest');
 const Donation = require('../models/Donation');
+const { getDonorLevel } = require('../utils/donorLevels');
 
 // @desc    Get all donors
 // @route   GET /api/donors
@@ -109,10 +111,35 @@ exports.getMyProfile = async (req, res) => {
             });
         }
 
+        const isEligible = donor.isEligibleToDonate();
+
+        let daysRemaining = 0;
+
+        if (donor.lastDonationDate) {
+            const today = new Date();
+            const lastDonation = new Date(donor.lastDonationDate);
+
+            const diffTime = today - lastDonation;
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+            daysRemaining = diffDays >= 90 ? 0 : 90 - diffDays;
+        }
+
+        // Get donor level
+        const level = getDonorLevel(donor.totalDonations || 0);
+
         res.status(200).json({
             success: true,
-            donor
+            donor: {
+                ...donor.toObject(),
+                isEligible,
+                daysRemaining,
+                level: level.name,
+                badge: level.icon,
+                levelColor: level.color
+            }
         });
+
     } catch (error) {
         console.error('Get my profile error:', error);
         res.status(500).json({
@@ -470,6 +497,253 @@ exports.getDonorCountBefore = async (req, res) => {
             success: false,
             message: 'Server error',
             error: error.message
+        });
+    }
+};
+
+// @desc    Get top donors leaderboard
+// @route   GET /api/donors/leaderboard
+// @access  Public
+exports.getLeaderboard = async (req, res) => {
+    try {
+        const donors = await Donor.find({ totalDonations: { $gt: 0 } })
+            .populate("userId", "name bloodGroup")
+            .lean();
+
+        // Sort by totalDonations (highest first)
+        donors.sort((a, b) => (b.totalDonations || 0) - (a.totalDonations || 0));
+
+        // Assign rank + badge
+        const leaderboard = donors.map((donor, index) => {
+            const donations = donor.totalDonations || 0;
+
+            let badge = "Beginner";
+            let badgeIcon = "🌱";
+            if (donations >= 20) {
+                badge = "Diamond Legend";
+                badgeIcon = "👑";
+            } else if (donations >= 10) {
+                badge = "Platinum Champion";
+                badgeIcon = "💎";
+            } else if (donations >= 6) {
+                badge = "Gold Hero";
+                badgeIcon = "🥇";
+            } else if (donations >= 3) {
+                badge = "Silver Hero";
+                badgeIcon = "🥈";
+            } else if (donations >= 1) {
+                badge = "Bronze Hero";
+                badgeIcon = "🥉";
+            }
+
+            return {
+                rank: index + 1,
+                name: donor.userId?.name || "Unknown",
+                bloodGroup: donor.userId?.bloodGroup || "N/A",
+                totalDonations: donations,
+                badge,
+                badgeIcon
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            count: leaderboard.length,
+            leaderboard
+        });
+
+    } catch (error) {
+        console.error("Leaderboard error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+    }
+};
+
+// @desc    Mark donation as completed (admin)
+// @route   PUT /api/donors/mark-donated
+// @access  Private/Admin
+exports.markDonationCompleted = async (req, res) => {
+    try {
+        const { donorId, units = 1, requestId } = req.body;
+
+        if (!donorId) {
+            return res.status(400).json({
+                success: false,
+                message: "Donor ID is required"
+            });
+        }
+
+        const donor = await Donor.findById(donorId).populate('userId', 'name bloodGroup');
+
+        if (!donor) {
+            return res.status(404).json({
+                success: false,
+                message: "Donor not found"
+            });
+        }
+
+        // Check if donor is eligible
+        if (!donor.isEligibleToDonate()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Donor is not eligible to donate at this time',
+                nextEligibleDate: donor.nextEligibleDate
+            });
+        }
+
+        const today = new Date();
+
+        // Next eligible after 90 days
+        const nextEligible = new Date();
+        nextEligible.setDate(today.getDate() + 90);
+
+        donor.totalDonations = (donor.totalDonations || 0) + 1;
+        donor.totalUnitsDonated = (donor.totalUnitsDonated || 0) + units;
+        donor.lastDonationDate = today;
+        donor.nextEligibleDate = nextEligible;
+        
+        // Update donation streak
+        if (donor.donationStreak) {
+            donor.donationStreak += 1;
+        } else {
+            donor.donationStreak = 1;
+        }
+
+        await donor.save();
+
+        // If this donation is for a specific request, update that request
+        if (requestId) {
+            const request = await BloodRequest.findById(requestId);
+            if (request) {
+                request.fulfilledUnits = (request.fulfilledUnits || 0) + units;
+                
+                // Update donor in acceptedDonors list
+                const acceptedDonor = request.acceptedDonors?.find(
+                    d => d.donorId && d.donorId.toString() === donorId.toString()
+                );
+                if (acceptedDonor) {
+                    acceptedDonor.status = 'Donated';
+                }
+
+                // Add to donors list if not already there
+                if (!request.donors) request.donors = [];
+                request.donors.push({
+                    donorId: donor._id,
+                    unitsDonated: units,
+                    donationDate: new Date()
+                });
+
+                // Check if request is now fulfilled
+                if (request.fulfilledUnits >= request.requiredUnits) {
+                    request.status = 'Completed';
+                    request.completedAt = new Date();
+                }
+
+                await request.save();
+            }
+        }
+
+        // Get updated level info
+        const level = getDonorLevel(donor.totalDonations);
+
+        res.status(200).json({
+            success: true,
+            message: "Donation marked successfully",
+            donor: {
+                id: donor._id,
+                name: donor.userId?.name,
+                bloodGroup: donor.userId?.bloodGroup,
+                totalDonations: donor.totalDonations,
+                totalUnits: donor.totalUnitsDonated,
+                lastDonationDate: donor.lastDonationDate,
+                nextEligibleDate: donor.nextEligibleDate,
+                level: level.name,
+                badge: level.icon
+            }
+        });
+
+    } catch (error) {
+        console.error("Mark donation error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
+};
+
+// @desc    Get donor statistics
+// @route   GET /api/donors/stats
+// @access  Private/Admin
+exports.getDonorStats = async (req, res) => {
+    try {
+        const totalDonors = await Donor.countDocuments();
+        const activeDonors = await Donor.countDocuments({ isActive: true });
+        const availableDonors = await Donor.countDocuments({ isAvailable: true });
+        
+        // Donors by blood group
+        const donors = await Donor.find().populate('userId', 'bloodGroup');
+        const bloodGroupStats = {};
+        
+        donors.forEach(donor => {
+            const bg = donor.userId?.bloodGroup || 'Unknown';
+            bloodGroupStats[bg] = (bloodGroupStats[bg] || 0) + 1;
+        });
+
+        // Donors by college/department
+        const collegeStats = await Donor.aggregate([
+            { $group: {
+                _id: '$collegeDetails.collegeName',
+                count: { $sum: 1 }
+            }},
+            { $sort: { count: -1 } },
+            { $limit: 10 }
+        ]);
+
+        // Average donations
+        const avgStats = await Donor.aggregate([
+            { $group: {
+                _id: null,
+                avgDonations: { $avg: '$totalDonations' },
+                avgUnits: { $avg: '$totalUnitsDonated' },
+                totalDonations: { $sum: '$totalDonations' },
+                totalUnits: { $sum: '$totalUnitsDonated' }
+            }}
+        ]);
+
+        // Donation frequency distribution
+        const donationLevels = {
+            beginner: await Donor.countDocuments({ totalDonations: { $lt: 3 } }),
+            bronze: await Donor.countDocuments({ totalDonations: { $gte: 3, $lt: 6 } }),
+            silver: await Donor.countDocuments({ totalDonations: { $gte: 6, $lt: 10 } }),
+            gold: await Donor.countDocuments({ totalDonations: { $gte: 10, $lt: 20 } }),
+            platinum: await Donor.countDocuments({ totalDonations: { $gte: 20 } })
+        };
+
+        res.status(200).json({
+            success: true,
+            stats: {
+                total: totalDonors,
+                active: activeDonors,
+                available: availableDonors,
+                byBloodGroup: bloodGroupStats,
+                topColleges: collegeStats,
+                donationLevels,
+                averages: avgStats[0] || {
+                    avgDonations: 0,
+                    avgUnits: 0,
+                    totalDonations: 0,
+                    totalUnits: 0
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Get donor stats error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
         });
     }
 };

@@ -25,13 +25,40 @@ const Donors = () => {
       
       const response = await donorAPI.getAll(params);
       if (response.data.success) {
-        setDonors(response.data.donors);
+        // Add frontend controlled flag
+        const donorsWithUIState = response.data.donors.map(d => ({
+          ...d,
+          donated: false
+        }));
+        setDonors(donorsWithUIState);
       }
     } catch (error) {
       toast.error('Failed to load donors');
       console.error('Error fetching donors:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const markDonated = async (donorId) => {
+    try {
+      await donorAPI.markDonated({ donorId, units: 1 });
+
+      toast.success("Donation marked successfully!");
+      console.log("Updating UI for:", donorId);
+
+      // Force UI change
+      setDonors(prev =>
+        prev.map(d =>
+          d._id === donorId
+            ? { ...d, donated: true }
+            : d
+        )
+      );
+
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to mark donation");
     }
   };
 
@@ -55,7 +82,7 @@ const Donors = () => {
     <AdminDashboardPage>
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">Donor List</h2>
+          <h2 className="text-2xl font-bold">Donor Management</h2>
           <div className="flex gap-4">
             <input
               type="text"
@@ -91,65 +118,65 @@ const Donors = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto bg-white rounded-lg shadow">
-          <table className="w-full border border-gray-300">
-            <thead className="bg-red-100">
-              <tr>
-                <th className="p-3 text-left">Donor ID</th>
-                <th className="p-3 text-left">Name</th>
-                <th className="p-3 text-left">Blood Group</th>
-                <th className="p-3 text-left">College</th>
-                <th className="p-3 text-left">Department</th>
-                <th className="p-3 text-left">Location</th>
-                <th className="p-3 text-left">Last Donation</th>
-                <th className="p-3 text-left">Status</th>
-                <th className="p-3 text-left">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredDonors.length > 0 ? (
-                filteredDonors.map((donor) => (
-                  <tr key={donor._id} className="border-t hover:bg-gray-50">
-                    <td className="p-3 font-mono text-sm">{donor._id.slice(-6).toUpperCase()}</td>
-                    <td className="p-3">{donor.userId?.name || 'Unknown'}</td>
-                    <td className="p-3 font-bold">{donor.userId?.bloodGroup || 'N/A'}</td>
-                    <td className="p-3">{donor.collegeDetails?.collegeName || 'N/A'}</td>
-                    <td className="p-3">{donor.collegeDetails?.department || 'N/A'}</td>
-                    <td className="p-3">{donor.address?.city || donor.collegeDetails?.district || 'N/A'}</td>
-                    <td className="p-3">
-                      {donor.lastDonationDate 
-                        ? new Date(donor.lastDonationDate).toLocaleDateString() 
-                        : 'Never'}
-                    </td>
-                    <td className="p-3">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        donor.isAvailable 
-                          ? 'bg-green-100 text-green-700' 
-                          : 'bg-gray-100 text-gray-700'
-                      }`}>
-                        {donor.isAvailable ? 'Available' : 'Unavailable'}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <button className="text-blue-600 hover:underline text-sm mr-2">View</button>
-                      <button 
-                        onClick={() => window.location.href = `tel:${donor.userId?.phone}`}
-                        className="text-green-600 hover:underline text-sm"
-                      >
-                        Contact
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="9" className="p-6 text-center text-gray-500">
-                    No donors found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="grid gap-6">
+          {filteredDonors.map((donor) => (
+            <div
+              key={donor._id}
+              className="bg-white p-6 rounded-xl shadow-md flex justify-between items-center"
+            >
+              <div>
+                <h2 className="font-bold text-lg">
+                  {donor.userId?.name || 'Unknown'}
+                </h2>
+                <p>Blood Group: {donor.userId?.bloodGroup || 'N/A'}</p>
+                <p>College: {donor.collegeDetails?.collegeName || 'N/A'}</p>
+                <p>Department: {donor.collegeDetails?.department || 'N/A'}</p>
+                <p>Location: {donor.address?.city || donor.collegeDetails?.district || 'N/A'}</p>
+                <p>Total Donations: {donor.totalDonations || 0}</p>
+                <p>Last Donation: {donor.lastDonationDate 
+                  ? new Date(donor.lastDonationDate).toLocaleDateString() 
+                  : 'Never'}
+                </p>
+                <p>Status: 
+                  <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
+                    donor.isAvailable 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-gray-100 text-gray-700'
+                  }`}>
+                    {donor.isAvailable ? 'Available' : 'Unavailable'}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => markDonated(donor._id)}
+                  disabled={donor.donated}
+                  className={`px-4 py-2 rounded-lg text-white transition ${
+                    donor.donated
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-green-600 hover:bg-green-700"
+                  }`}
+                >
+                  {donor.donated ? "Donated" : "Mark Donated"}
+                </button>
+                <button 
+                  onClick={() => window.location.href = `tel:${donor.userId?.phone}`}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                >
+                  Contact
+                </button>
+                <button className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">
+                  View
+                </button>
+              </div>
+            </div>
+          ))}
+          {filteredDonors.length === 0 && (
+            <div className="bg-white p-6 rounded-xl shadow-md text-center text-gray-500">
+              No donors found
+            </div>
+          )}
         </div>
         
         <div className="mt-4 text-sm text-gray-600">

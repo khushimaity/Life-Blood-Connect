@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import DonorDashboardPage from "./DonorDashboardPage";
 import { useAuth } from "../components/AuthContext";
-import axios from "axios";
+import { donorAPI } from "../api/services";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 
@@ -39,14 +39,10 @@ const DonorDashboard = () => {
       }
 
       // Fetch donor profile
-      const profileResponse = await axios.get('http://localhost:5000/api/donors/profile/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const profileResponse = await donorAPI.getProfile();
 
       // Fetch donation history
-      const historyResponse = await axios.get('http://localhost:5000/api/donors/donation-history', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const historyResponse = await donorAPI.getDonationHistory();
 
       if (profileResponse.data.success) {
         const donor = profileResponse.data.donor;
@@ -54,10 +50,7 @@ const DonorDashboard = () => {
         // Generate sequential donor ID based on registration order
         const generateDonorId = async () => {
           try {
-            const countResponse = await axios.get('http://localhost:5000/api/donors/count-before', {
-              params: { donorId: donor._id },
-              headers: { Authorization: `Bearer ${token}` }
-            });
+            const countResponse = await donorAPI.getDonorCountBefore(donor._id);
             
             if (countResponse.data.success) {
               const sequentialNumber = countResponse.data.count + 1;

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import AdminDashboardPage from "./AdminDashboardPage";
-import { adminAPI } from "../api/services";
+import { adminAPI, bloodRequestAPI } from "../api/services";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { bloodRequestAPI } from "../api/services";
 
 const AdminDashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
@@ -104,6 +103,28 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* Emergency Stats Summary */}
+        {dashboardData?.recentRequests?.some(r => r.priority === 'Emergency') && (
+          <div className="bg-red-50 border-l-4 border-red-600 p-4 mb-6 rounded-r-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🚨</span>
+                <div>
+                  <h3 className="font-bold text-red-800">Active Emergency Requests</h3>
+                  <p className="text-sm text-red-600">
+                   {dashboardData.recentRequests.filter(r => r.priority === 'Emergency').length} emergencies
+                 </p>
+                </div>
+              </div>
+              <Link to="/emergency-request">
+                <button className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700">
+                  New Emergency
+                </button>
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl shadow-lg p-6">
@@ -123,7 +144,7 @@ const AdminDashboard = () => {
             <div className="text-sm opacity-90">Completed</div>
           </div>
           <div className="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl shadow-lg p-6">
-            <div className="text-3xl font-bold mb-2">{dashboardData?.stats?.totalAcceptedDonors || 0}</div>
+            <div className="text-3xl font-bold mb-2">{dashboardData?.stats?.acceptedDonors || dashboardData?.stats?.totalAcceptedDonors || 0}</div>
             <div className="text-sm opacity-90">Donors Accepted</div>
           </div>
         </div>
@@ -146,7 +167,6 @@ const AdminDashboard = () => {
                 <th className="px-4 py-3 text-sm font-semibold text-red-700">Request ID</th>
                 <th className="px-4 py-3 text-sm font-semibold text-red-700">Patient</th>
                 <th className="px-4 py-3 text-sm font-semibold text-red-700">Blood Group</th>
-                <th className="px-4 py-3 text-sm font-semibold text-red-700">Units</th>
                 <th className="px-4 py-3 text-sm font-semibold text-red-700">Donors</th>
                 <th className="px-4 py-3 text-sm font-semibold text-red-700">Priority</th>
                 <th className="px-4 py-3 text-sm font-semibold text-red-700">Status</th>
@@ -164,14 +184,9 @@ const AdminDashboard = () => {
                       {req.bloodGroup}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    {req.requiredUnits} 
-                    {req.fulfilledUnits > 0 && (
-                      <span className="text-green-600 text-xs ml-1">
-                        ({req.fulfilledUnits} filled)
-                      </span>
-                    )}
-                  </td>
+                  
+                  
+                  
                   <td className="px-4 py-3">
                     {req.acceptedDonors > 0 ? (
                       <span className="text-green-600 font-medium">{req.acceptedDonors}</span>
@@ -231,7 +246,7 @@ const AdminDashboard = () => {
               ))}
               {(!dashboardData?.recentRequests || dashboardData.recentRequests.length === 0) && (
                 <tr>
-                  <td colSpan="9" className="text-center py-8 text-gray-500">
+                  <td colSpan="10" className="text-center py-8 text-gray-500">
                     No blood requests found
                   </td>
                 </tr>

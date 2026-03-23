@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminDashboardPage from "./AdminDashboardPage";
-import axios from "axios";
+import { bloodRequestAPI, adminAPI } from "../api/services";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -45,10 +45,7 @@ const PostRequest = () => {
 
   const fetchHospitalInfo = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/profile', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await adminAPI.getAdminProfile();
       
       if (response.data.success) {
         setHospitalInfo(response.data.admin);
@@ -122,8 +119,6 @@ const PostRequest = () => {
     setLoading(true);
 
     try {
-      const token = localStorage.getItem('token');
-      
       // Prepare data for backend - hospital info will be taken from token/session
       const requestData = {
         patientName: formData.patientName,
@@ -145,11 +140,7 @@ const PostRequest = () => {
 
       console.log('Submitting request:', requestData);
 
-      const response = await axios.post(
-        'http://localhost:5000/api/blood-requests',
-        requestData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await bloodRequestAPI.create(requestData);
 
       if (response.data.success) {
         toast.success('Request posted successfully!');

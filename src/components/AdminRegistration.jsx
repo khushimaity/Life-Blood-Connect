@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import axios from 'axios';
-import { CENTER_TYPES } from '../constants'; // Add this import
+import { CENTER_TYPES } from '../constants';
 
 const AdminRegistration = () => {
   const navigate = useNavigate();
@@ -26,7 +26,6 @@ const AdminRegistration = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     
-    // Handle nested location fields
     if (name.includes('location.')) {
       const field = name.split('.')[1];
       setFormData(prev => ({
@@ -49,7 +48,6 @@ const AdminRegistration = () => {
     setLoading(true);
 
     try {
-      // Validate required fields
       if (!formData.adminName || !formData.organizationName || !formData.email || 
           !formData.phone || !formData.centerType || !formData.password) {
         toast.error('Please fill in all required fields');
@@ -57,14 +55,12 @@ const AdminRegistration = () => {
         return;
       }
 
-      // Phone number validation
       if (!/^\d{10}$/.test(formData.phone)) {
         toast.error('Phone number must be 10 digits');
         setLoading(false);
         return;
       }
 
-      // Email validation
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formData.email)) {
         toast.error('Please enter a valid email address');
@@ -72,7 +68,6 @@ const AdminRegistration = () => {
         return;
       }
 
-      // Password validation
       if (formData.password.length < 6) {
         toast.error('Password must be at least 6 characters');
         setLoading(false);
@@ -101,13 +96,8 @@ const AdminRegistration = () => {
       console.log('Registration response:', response.data);
 
       if (response.data.success) {
-        // Save token
         localStorage.setItem('token', response.data.token);
-        
-        // Show success message
         toast.success('Admin registered successfully! Redirecting to dashboard...');
-        
-        // Redirect to admin dashboard after 2 seconds
         setTimeout(() => {
           navigate('/admin-dashboard');
         }, 2000);
@@ -115,7 +105,6 @@ const AdminRegistration = () => {
     } catch (error) {
       console.error('Registration error:', error.response?.data || error.message);
       
-      // Handle validation errors from backend
       if (error.response?.data?.errors) {
         const errorMessages = error.response.data.errors.map(e => e.msg).join('\n');
         toast.error(errorMessages);

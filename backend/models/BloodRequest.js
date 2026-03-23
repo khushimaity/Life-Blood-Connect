@@ -5,11 +5,10 @@ const bloodRequestSchema = new mongoose.Schema({
     requestId: {
         type: String,
         unique: true,
-        required: true,
         uppercase: true,
         match: [/^REQ\d{6}$/, 'Invalid request ID format']
     },
-    
+
     // Patient Information
     patientName: {
         type: String,
@@ -21,7 +20,7 @@ const bloodRequestSchema = new mongoose.Schema({
         type: String,
         enum: ['Male', 'Female', 'Other']
     },
-    
+
     // Blood Requirement
     bloodGroup: {
         type: String,
@@ -39,7 +38,7 @@ const bloodRequestSchema = new mongoose.Schema({
         enum: ['Whole Blood', 'Packed RBC', 'Platelets', 'Plasma', 'Cryoprecipitate', 'Not Specified'],
         default: 'Whole Blood'
     },
-    
+
     // Hospital & Location
     hospitalName: {
         type: String,
@@ -53,9 +52,13 @@ const bloodRequestSchema = new mongoose.Schema({
         address: String,
         city: String,
         district: String,
-        state: String
+        state: String,
+        coordinates: {
+            type: [Number],
+            default: [0, 0]
+        }
     },
-    
+
     // Contact Information
     contactPerson: {
         name: String,
@@ -67,7 +70,7 @@ const bloodRequestSchema = new mongoose.Schema({
         relationship: String
     },
     alternateContact: String,
-    
+
     // Request Details
     reason: {
         type: String,
@@ -84,10 +87,12 @@ const bloodRequestSchema = new mongoose.Schema({
         type: Date,
         required: [true, 'Please specify when blood is needed']
     },
-    
+    notes: String,
+
     // Status Tracking
     status: {
         type: String,
+        
         enum: ['Pending', 'Approved', 'Processing', 'Completed', 'Cancelled', 'Expired'],
         default: 'Pending'
     },
@@ -103,18 +108,18 @@ const bloodRequestSchema = new mongoose.Schema({
         },
         notes: String
     }],
-    
+
     // Assignment & Fulfillment
     assignedTo: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Admin' // Blood bank/hospital handling request
+        ref: 'Admin'
     },
     assignedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
     assignedAt: Date,
-    
+
     // Fulfillment Details
     fulfilledUnits: {
         type: Number,
@@ -128,8 +133,8 @@ const bloodRequestSchema = new mongoose.Schema({
         unitsDonated: Number,
         donationDate: Date
     }],
-    
-    // NEW: Track donors who have volunteered/accepted the request
+
+    // Track donors who have volunteered/accepted the request
     acceptedDonors: [{
         donorId: {
             type: mongoose.Schema.Types.ObjectId,
@@ -147,34 +152,48 @@ const bloodRequestSchema = new mongoose.Schema({
         },
         notes: String
     }],
-    
-    // Requestor Information (if registered user)
+
+    // Selected donor (final choice)
+    selectedDonor: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Donor',
+        default: null
+    },
+
+    // Requestor Information
     requestedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
-    
+
+    // Emergency Notifications
+    emergencyNotifications: {
+        sentAt: Date,
+        donorCount: Number,
+        successful: Number,
+        failed: Number
+    },
+    notifiedDonors: {
+        type: Number,
+        default: 0
+    },
+
     // Documents
     documents: [{
         type: { type: String, enum: ['Prescription', 'Medical Report', 'ID Proof', 'Other'] },
         url: String,
         uploadedAt: Date
     }],
-    
-    // Timestamps
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: Date,
+
     completedAt: Date
+
 }, {
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
 });
 
-// Generate request ID before saving
+// Auto-generate Request ID
 bloodRequestSchema.pre('save', async function(next) {
     if (!this.requestId) {
         const lastRequest = await this.constructor.findOne().sort({ createdAt: -1 });
@@ -216,28 +235,26 @@ bloodRequestSchema.virtual('urgencyLevel').get(function() {
     return 'low';
 });
 
-// Virtual to check if a specific donor has accepted
+// Virtual for accepted donors count
+bloodRequestSchema.virtual('acceptedDonorsCount').get(function() {
+    return this.acceptedDonors?.length || 0;
+});
+
+// Method to check if a specific donor has accepted
 bloodRequestSchema.methods.hasDonorAccepted = function(donorId) {
     return this.acceptedDonors?.some(
         d => d.donorId && d.donorId.toString() === donorId.toString()
     );
 };
 
-// Virtual to get accepted donors count
-bloodRequestSchema.virtual('acceptedDonorsCount').get(function() {
-    return this.acceptedDonors?.length || 0;
-});
-
-// Indexes
-bloodRequestSchema.index({ bloodGroup: 1, status: 1 });
-bloodRequestSchema.index({ hospitalId: 1, createdAt: -1 });
-bloodRequestSchema.index({ neededBy: 1 });
-bloodRequestSchema.index({ "location.city": 1, status: 1 });
-bloodRequestSchema.index({ "acceptedDonors.donorId": 1 }); // Index for faster queries
-
-// Update status and add to history
+// Method to update status with history
 bloodRequestSchema.methods.updateStatus = async function(newStatus, changedBy, notes = '') {
     this.status = newStatus;
+    
+    if (!this.statusHistory) {
+        this.statusHistory = [];
+    }
+    
     this.statusHistory.push({
         status: newStatus,
         changedBy: changedBy,
@@ -291,5 +308,20 @@ bloodRequestSchema.methods.updateAcceptedDonorStatus = async function(donorId, n
     
     throw new Error('Donor not found in accepted list');
 };
+
+// Method to select a donor
+bloodRequestSchema.methods.selectDonor = async function(donorId) {
+    this.selectedDonor = donorId;
+    this.status = 'Confirmed';
+    return await this.save();
+};
+
+// Indexes
+bloodRequestSchema.index({ bloodGroup: 1, status: 1 });
+bloodRequestSchema.index({ hospitalId: 1, createdAt: -1 });
+bloodRequestSchema.index({ neededBy: 1 });
+bloodRequestSchema.index({ "location.city": 1, status: 1 });
+bloodRequestSchema.index({ "acceptedDonors.donorId": 1 });
+bloodRequestSchema.index({ priority: -1, neededBy: 1 });
 
 module.exports = mongoose.model('BloodRequest', bloodRequestSchema);

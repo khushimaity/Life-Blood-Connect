@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import AdminDashboardPage from "./AdminDashboardPage";
 import { useAuth } from "../components/AuthContext";
 import { FaUser, FaEnvelope, FaPhone, FaBuilding, FaMapMarkerAlt, FaClock, FaEdit, FaSave, FaTimes, FaCheckCircle, FaStar, FaUsers, FaTint, FaClipboardList } from 'react-icons/fa';
-import axios from 'axios';
+import { adminAPI } from "../api/services";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -28,12 +28,8 @@ const AdminProfile = () => {
     const fetchProfile = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
             
-            // Get admin profile
-            const response = await axios.get('http://localhost:5000/api/admin/profile', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await adminAPI.getAdminProfile();
             
             if (response.data.success) {
                 setProfile(response.data.admin);
@@ -49,10 +45,7 @@ const AdminProfile = () => {
 
     const fetchStats = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get('http://localhost:5000/api/admin/dashboard', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await adminAPI.getDashboard();
             
             if (response.data.success) {
                 setStats(response.data.dashboard.stats);
@@ -88,11 +81,7 @@ const AdminProfile = () => {
         setUpdating(true);
         
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.put('http://localhost:5000/api/admin/profile', 
-                formData,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const response = await adminAPI.updateProfile(formData);
             
             if (response.data.success) {
                 setProfile(response.data.admin);

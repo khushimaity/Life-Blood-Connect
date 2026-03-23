@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Donor = require('../models/Donor');
 const Admin = require('../models/Admin');
+const CollegeAdmin = require('../models/CollegeAdmin');
 const generateToken = require('../utils/generateToken');
 const { validationResult } = require('express-validator');
 
@@ -14,7 +15,7 @@ exports.registerDonor = async (req, res) => {
             return res.status(400).json({ errors: errors.array() });
         }
 
-        const { name, email, password, phone, bloodGroup, ...donorData } = req.body;
+        const { name, email, password, phone, bloodGroup, coordinates, ...donorData } = req.body;
 
         // Check if user exists
         const userExists = await User.findOne({ email });
@@ -35,8 +36,22 @@ exports.registerDonor = async (req, res) => {
             role: 'donor'
         });
 
+        // Prepare address object
+        const address = donorData.address || {
+            city: donorData.collegeDetails?.district || '',
+            district: donorData.collegeDetails?.district || '',
+            state: donorData.collegeDetails?.state || ''
+        };
+
+        // Include coordinates if provided
+        if (coordinates && coordinates.coordinates) {
+            address.coordinates = {
+                type: 'Point',
+                coordinates: coordinates.coordinates
+            };
+        }
+
         // Create donor profile
-        // Create donor profile - ONLY donor-specific fields
         const donor = await Donor.create({
             userId: user._id,
             age: donorData.age,
@@ -45,11 +60,7 @@ exports.registerDonor = async (req, res) => {
             guardianPhone: donorData.guardianPhone,
             guardianRelation: donorData.guardianRelation,
             collegeDetails: donorData.collegeDetails,
-            address: donorData.address || {
-                city: donorData.collegeDetails?.district || '',
-                district: donorData.collegeDetails?.district || '',
-                state: donorData.collegeDetails?.state || ''
-            }
+            address: address
         });
 
         // Generate token
@@ -85,9 +96,6 @@ exports.registerDonor = async (req, res) => {
 // @desc    Register a new admin/hospital
 // @route   POST /api/auth/register/admin
 // @access  Public
-// @desc    Register a new admin/hospital
-// @route   POST /api/auth/register/admin
-// @access  Public
 exports.registerAdmin = async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -95,16 +103,15 @@ exports.registerAdmin = async (req, res) => {
             return res.status(400).json({ errors: errors.array() });
         }
 
-        // ✅ DESTRUCTURE ALL FIELDS explicitly
         const { 
             adminName, 
             organizationName, 
             email, 
             password, 
             phone, 
-            centerType,      // ← ADD THIS
-            location,        // ← ADD THIS
-            ...adminData     // ← Any additional fields
+            centerType,
+            location,
+            ...adminData
         } = req.body;
 
         console.log('Registration data received:', { 
@@ -136,13 +143,13 @@ exports.registerAdmin = async (req, res) => {
 
         console.log('User created successfully:', user._id);
 
-        // Create admin profile with ALL fields
+        // Create admin profile
         const admin = await Admin.create({
             userId: user._id,
             adminName,
             organizationName,
-            centerType,                    // ← NOW INCLUDED
-            location: location || {        // ← NOW INCLUDED with fallback
+            centerType,
+            location: location || {
                 city: '',
                 district: '',
                 state: '',
@@ -175,9 +182,7 @@ exports.registerAdmin = async (req, res) => {
     } catch (error) {
         console.error('Register admin error:', error);
         
-        // If admin creation failed but user was created, clean up
         if (error.name === 'ValidationError' || error.code === 11000) {
-            // Try to delete the user if it was created
             try {
                 const user = await User.findOne({ email: req.body.email });
                 if (user) await User.findByIdAndDelete(user._id);
@@ -186,6 +191,100 @@ exports.registerAdmin = async (req, res) => {
             }
         }
 
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// @desc    Register a new college admin
+// @route   POST /api/auth/register/college-admin
+// @access  Public
+exports.registerCollegeAdmin = async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        const { 
+            collegeName, 
+            adminName, 
+            email, 
+            password, 
+            collegeCode, 
+            phone,
+            address,
+            totalStudents,
+            departments 
+        } = req.body;
+
+        // Check if user exists
+        const userExists = await User.findOne({ email });
+        if (userExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'User already exists with this email'
+            });
+        }
+
+        // Check if college code is unique (if provided)
+        if (collegeCode) {
+            const collegeExists = await CollegeAdmin.findOne({ collegeCode });
+            if (collegeExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'College code already exists'
+                });
+            }
+        }
+
+        // Create user
+        const user = await User.create({
+            name: adminName,
+            email,
+            password,
+            phone: phone || '',
+            role: 'college_admin'
+        });
+
+        // Create college admin profile
+        const collegeAdmin = await CollegeAdmin.create({
+            userId: user._id,
+            collegeName,
+            adminName,
+            email,
+            collegeCode: collegeCode || '',
+            phone: phone || '',
+            address: address || {
+                state: '',
+                district: '',
+                addressLine: ''
+            },
+            totalStudents: totalStudents || 0,
+            departments: departments || [],
+            isVerified: false
+        });
+
+        // Generate token
+        const token = generateToken(user._id, user.role);
+
+        res.status(201).json({
+            success: true,
+            message: 'College admin registered successfully',
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role
+            },
+            collegeAdmin
+        });
+    } catch (error) {
+        console.error('Register college admin error:', error);
         res.status(500).json({
             success: false,
             message: 'Server error',
@@ -234,10 +333,10 @@ exports.login = async (req, res) => {
             });
         }
 
-        if (!isAdmin && user.role !== 'donor') {
+        if (!isAdmin && user.role !== 'donor' && user.role !== 'college_admin') {
             return res.status(403).json({
                 success: false,
-                message: 'Access denied. Donor login required'
+                message: 'Access denied. Donor or College Admin login required'
             });
         }
 
@@ -262,6 +361,8 @@ exports.login = async (req, res) => {
             profile = await Donor.findOne({ userId: user._id });
         } else if (user.role === 'admin') {
             profile = await Admin.findOne({ userId: user._id });
+        } else if (user.role === 'college_admin') {
+            profile = await CollegeAdmin.findOne({ userId: user._id });
         }
 
         res.status(200).json({
@@ -309,6 +410,8 @@ exports.getMe = async (req, res) => {
             profile = await Donor.findOne({ userId: user._id });
         } else if (user.role === 'admin') {
             profile = await Admin.findOne({ userId: user._id });
+        } else if (user.role === 'college_admin') {
+            profile = await CollegeAdmin.findOne({ userId: user._id });
         }
 
         res.status(200).json({
@@ -339,8 +442,6 @@ exports.getMe = async (req, res) => {
 // @access  Private
 exports.logout = async (req, res) => {
     try {
-        // In JWT-based auth, logout is handled client-side by removing token
-        // But we can add blacklisting logic here if needed
         res.status(200).json({
             success: true,
             message: 'Logout successful'
@@ -388,6 +489,12 @@ exports.updateProfile = async (req, res) => {
             if (admin && req.body.adminData) {
                 Object.assign(admin, req.body.adminData);
                 await admin.save();
+            }
+        } else if (user.role === 'college_admin') {
+            const collegeAdmin = await CollegeAdmin.findOne({ userId: user._id });
+            if (collegeAdmin && req.body.collegeAdminData) {
+                Object.assign(collegeAdmin, req.body.collegeAdminData);
+                await collegeAdmin.save();
             }
         }
 

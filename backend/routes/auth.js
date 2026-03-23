@@ -5,6 +5,7 @@ const { protect } = require('../middleware/auth');
 const {
     registerDonor,
     registerAdmin,
+    registerCollegeAdmin,
     login,
     getMe,
     logout,
@@ -19,6 +20,7 @@ router.get('/test', (req, res) => {
         endpoints: {
             registerDonor: 'POST /api/auth/register/donor',
             registerAdmin: 'POST /api/auth/register/admin',
+            registerCollegeAdmin: 'POST /api/auth/register/college-admin',
             login: 'POST /api/auth/login',
             getMe: 'GET /api/auth/me (protected)',
             logout: 'POST /api/auth/logout (protected)'
@@ -47,6 +49,15 @@ const adminRegisterValidation = [
     body('location.city').notEmpty().withMessage('City is required')
 ];
 
+// College Admin Validation
+const collegeAdminValidation = [
+    body('collegeName').notEmpty().withMessage('College name is required'),
+    body('adminName').notEmpty().withMessage('Admin name is required'),
+    body('email').isEmail().withMessage('Please enter a valid email'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('phone').optional().matches(/^[0-9]{10}$/).withMessage('Please enter a valid 10-digit phone number')
+];
+
 const loginValidation = [
     body('email').isEmail().withMessage('Please enter a valid email'),
     body('password').notEmpty().withMessage('Password is required')
@@ -55,6 +66,7 @@ const loginValidation = [
 // Public routes
 router.post('/register/donor', donorRegisterValidation, registerDonor);
 router.post('/register/admin', adminRegisterValidation, registerAdmin);
+router.post('/register/college-admin', collegeAdminValidation, registerCollegeAdmin);
 router.post('/login', loginValidation, login);
 
 // Protected routes

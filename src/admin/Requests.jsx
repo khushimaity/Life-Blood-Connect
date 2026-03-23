@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import AdminDashboardPage from "./AdminDashboardPage";
 import { bloodRequestAPI } from "../api/services";
 import { toast } from 'react-toastify';
+import axios from "axios";
 
 const Requests = () => {
   const [requests, setRequests] = useState([]);
@@ -25,6 +26,7 @@ const Requests = () => {
       if (filter.priority !== 'All') params.priority = filter.priority;
       
       const response = await bloodRequestAPI.getAll(params);
+      
       if (response.data.success) {
         setRequests(response.data.requests);
       }
@@ -35,6 +37,32 @@ const Requests = () => {
       setLoading(false);
     }
   };
+
+const handleSelectDonor = async (requestId, donorId) => {
+  try {
+    const token = localStorage.getItem("token");
+
+    await axios.put(
+      `http://localhost:5000/api/blood-requests/select-donor/${requestId}`,
+      { donorId },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    // 🔥 Update state directly instead of refreshing
+    setRequests((prevRequests) =>
+      prevRequests.map((req) =>
+        req.requestId === requestId
+          ? { ...req, selectedDonor: donorId }
+          : req
+      )
+    );
+
+  } catch (error) {
+    console.error(error);
+  }
+};
 
   const getStatusClass = (status) => {
     switch (status) {
@@ -129,11 +157,13 @@ const Requests = () => {
               {requests.length > 0 ? (
                 requests.map((req) => (
                   <tr key={req.requestId} className="border-t hover:bg-gray-50">
-                    <td className="p-3 font-mono text-sm">{req.requestId}</td>
+                  <td className="p-3 font-mono text-sm">{req.requestId}</td>
                     <td className="p-3">{req.patientName}</td>
                     <td className="p-3 font-bold">{req.bloodGroup}</td>
-                    <td className="p-3">{req.quantity} ({req.fulfilled || 0} fulfilled)</td>
-                    <td className="p-3">{req.hospital}</td>
+                    <td className="p-3">
+                      {req.requiredUnits || req.quantity} ({req.fulfilledUnits || req.fulfilled || 0} fulfilled)
+                    </td>
+                    <td className="p-3">{req.hospitalId?.organizationName || req.hospitalName || req.hospital}</td>
                     <td className="p-3">
                       <span className={`px-2 py-1 rounded-full text-xs ${getPriorityClass(req.priority)}`}>
                         {req.priority}
@@ -149,13 +179,91 @@ const Requests = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="9" className="p-6 text-center text-gray-500">
+                  <td colSpan="8" className="p-6 text-center text-gray-500">
                     No blood requests found
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Accepted Donors Section */}
+        <div className="mt-10 bg-white rounded-xl shadow-lg p-6">
+          <h3 className="text-2xl font-bold mb-6 text-red-700 border-b pb-3">
+            Accepted Donors
+          </h3>
+
+          {requests.filter(r => r.acceptedDonors && r.acceptedDonors.length > 0).length === 0 ? (
+            <p className="text-gray-400 text-center py-6">
+              No accepted donors yet.
+            </p>
+          ) : (
+            requests
+              .filter(r => r.acceptedDonors && r.acceptedDonors.length > 0)
+              .map((req) => (
+                <div key={req._id} className="mb-8">
+                  {/* Patient Info */}
+                  <div className="mb-3">
+                    <h4 className="text-lg font-semibold text-gray-800">
+                      {req.patientName}
+                    </h4>
+                    <p className="text-sm text-gray-500">
+                      Blood Group: {req.bloodGroup}
+                    </p>
+                  </div>
+
+                  {/* Donor List */}
+                  <div className="space-y-3">
+                    {req.acceptedDonors.map((d) => (
+                      
+                      <div
+                        key={d?.donorId?._id || Math.random()}
+                        className="flex justify-between items-center bg-gray-50 border border-gray-200 px-4 py-3 rounded-lg hover:shadow transition"
+                      >
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            {d?.donorId?.userId?.name || "Donor"}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {d?.donorId?.userId?.bloodGroup}
+                          </p>
+                        </div>
+
+                        {req.selectedDonor &&
+                        req.selectedDonor.toString() === d?.donorId?._id?.toString() ? (
+                          <span className="bg-green-600 text-white px-4 py-1.5 rounded-md text-sm">
+                            Selected
+                          </span>
+                        ) : (
+                          <button
+  onClick={() =>
+    handleSelectDonor(req.requestId, d?.donorId?._id)}
+  disabled={!!req.selectedDonor}
+  className={`px-3 py-1 rounded text-white ${
+    req.selectedDonor &&
+    req.selectedDonor.toString() === d?.donorId?._id?.toString()
+      ? "bg-green-500"
+      : req.selectedDonor
+      ? "bg-gray-400 cursor-not-allowed"
+      : "bg-blue-500 hover:bg-blue-600"
+  }`}
+>
+  {req.selectedDonor &&
+  req.selectedDonor.toString() === d?.donorId?._id?.toString()
+    ? "Selected"
+    : req.selectedDonor
+    ? "Not Selected"
+    : "Select"}
+</button> 
+   
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+          )}
         </div>
       </div>
     </AdminDashboardPage>

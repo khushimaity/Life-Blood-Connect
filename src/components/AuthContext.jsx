@@ -83,7 +83,7 @@ export const AuthProvider = ({ children }) => {
         try {
             console.log('AuthContext login called with:', { email, isAdmin });
             
-            const response = await API.post('/auth/login', {
+            const response = await axios.post('http://localhost:5000/api/auth/login', {
                 email,
                 password,
                 isAdmin

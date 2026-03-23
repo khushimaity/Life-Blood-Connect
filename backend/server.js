@@ -15,6 +15,9 @@ const adminRoutes = require('./routes/admin');
 const bloodRequestRoutes = require('./routes/bloodRequest');
 const inventoryRoutes = require('./routes/inventory');
 const donationRoutes = require('./routes/donation');
+const collegeAdminRoutes = require('./routes/collegeAdmin');
+const emergencyRoutes = require('./routes/emergencyRoutes');
+const twilioRoutes = require('./routes/twilio');
 
 // Initialize Express app
 const app = express();
@@ -37,8 +40,10 @@ connectDB();
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
+    origin: ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -50,6 +55,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/blood-requests', bloodRequestRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/donations', donationRoutes);
+app.use('/api/college-admin', collegeAdminRoutes);
+app.use('/api/emergency', emergencyRoutes);
+app.use('/api/twilio', twilioRoutes);
 
 // ==================== UTILITY ENDPOINTS ====================
 // Health check
@@ -79,6 +87,9 @@ app.get('/api', (req, res) => {
       bloodRequests: '/api/blood-requests',
       inventory: '/api/inventory',
       donations: '/api/donations',
+      collegeAdmin: '/api/college-admin',
+      emergency: '/api/emergency',
+      twilio: '/api/twilio',
       health: '/api/health'
     }
   });
@@ -136,6 +147,16 @@ const server = app.listen(PORT, () => {
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📦 Database:    ${mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected'}`);
   console.log(`\n📡 API Base:   http://localhost:${PORT}/api`);
+  console.log(`\n📡 Available Routes:`);
+  console.log(`   • Auth:           /api/auth`);
+  console.log(`   • Donors:         /api/donors`);
+  console.log(`   • Admin:          /api/admin`);
+  console.log(`   • Blood Req:      /api/blood-requests`);
+  console.log(`   • Inventory:      /api/inventory`);
+  console.log(`   • Donations:      /api/donations`);
+  console.log(`   • College Admin:  /api/college-admin`);
+  console.log(`   • Emergency:      /api/emergency`);
+  console.log(`   • Twilio:         /api/twilio`);
   console.log(`${'='.repeat(40)}\n`);
 });
 

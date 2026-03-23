@@ -1,133 +1,115 @@
 const twilio = require('twilio');
+const Donor = require('../models/Donor');
+const { canDonateTo } = require('./bloodCompatibility');
 
-// Initialize Twilio client
 const client = twilio(
     process.env.TWILIO_ACCOUNT_SID,
     process.env.TWILIO_AUTH_TOKEN
 );
 
 /**
- * Send SMS notification
- * @param {string} to - Recipient phone number (with country code)
- * @param {string} message - SMS content
- * @returns {Promise<boolean>} - Success status
+ * Send single SMS
  */
 const sendSMS = async (to, message) => {
     try {
-        // Ensure phone number has country code
-        const formattedNumber = to.startsWith('+') ? to : `+91${to}`; // Default to India (+91)
-        
-        const result = await client.messages.create({
+        return await client.messages.create({
             body: message,
             from: process.env.TWILIO_PHONE_NUMBER,
-            to: formattedNumber
+            to
         });
-        
-        console.log('✅ SMS sent:', result.sid);
-        return true;
     } catch (error) {
-        console.error('❌ SMS sending error:', error);
-        return false;
+        console.error("Twilio Error:", error.message);
+        throw error;
     }
 };
 
+
 /**
- * Send bulk SMS to multiple recipients
- * @param {Array<string>} numbers - Array of phone numbers
- * @param {string} message - SMS content
- * @returns {Promise<Array>} - Results for each number
+ * Find nearby donors (used by bloodRequestController)
  */
-const sendBulkSMS = async (numbers, message) => {
-    const results = await Promise.allSettled(
-        numbers.map(number => sendSMS(number, message))
+ const findNearbyDonors = async (requiredBloodGroup, coordinates, radiusKm) => {
+
+   if (!coordinates || coordinates.length !== 2) {
+    console.log("❌ No coordinates provided");
+    return [];
+}
+
+const [longitude, latitude] = coordinates;
+
+    console.log("📍 Searching within 10km of:", latitude, longitude);
+
+    const radiusInMeters = radiusKm * 1000;
+
+    const donors = await Donor.find({
+        isAvailable: true,
+        'address.coordinates': {
+            $near: {
+                $geometry: {
+                    type: "Point",
+                    coordinates: [longitude, latitude]
+                },
+                $maxDistance: radiusInMeters
+            }
+        }
+    }).populate('userId', 'name phone bloodGroup');
+
+    console.log("Raw nearby donors:", donors.length);
+
+    const compatibleDonors = donors.filter(donor =>
+        donor.userId?.bloodGroup &&
+        canDonateTo(donor.userId.bloodGroup, requiredBloodGroup)
     );
-    
-    return results.map((result, index) => ({
-        number: numbers[index],
-        success: result.status === 'fulfilled' && result.value,
-        error: result.reason?.message
-    }));
+
+    console.log("Compatible nearby donors:", compatibleDonors.length);
+
+    return compatibleDonors;
 };
 
-/**
- * SMS Templates for different scenarios
- */
-const smsTemplates = {
-    // Emergency request to nearby donors
-    emergencyAlert: (patientName, bloodGroup, hospital, contact) => `
-🚨 EMERGENCY BLOOD NEEDED!
-Patient: ${patientName}
-Blood Group: ${bloodGroup}
-Hospital: ${hospital}
-Contact: ${contact}
-Please respond if you can donate. Lifeblood Connect
-    `.trim(),
-
-    // Donor accepted request
-    requestAccepted: (patientName, hospital) => `
-✅ You've accepted a blood request!
-Patient: ${patientName}
-Hospital: ${hospital}
-The hospital will contact you shortly.
-Thank you for saving lives! 🩸
-    `.trim(),
-
-    // Donation reminder
-    donationReminder: (nextEligibleDate) => `
-🩸 You're eligible to donate again!
-Next donation date: ${nextEligibleDate}
-Visit your nearest blood bank today.
-Every donation saves 3 lives!
-    `.trim(),
-
-    // Request fulfilled
-    requestFulfilled: (patientName) => `
-🎉 The blood request for ${patientName} has been fulfilled!
-Thank you for your contribution.
-You're a hero! 💪
-    `.trim(),
-
-    // New donor welcome
-    welcomeDonor: (name) => `
-Welcome to Lifeblood Connect, ${name}!
-Thank you for registering as a donor.
-You'll receive alerts for emergency needs.
-    `.trim(),
-
-    // Emergency request creation confirmation
-    emergencyCreated: (requestId, bloodGroup) => `
-🚨 Emergency request created!
-Request ID: ${requestId}
-Blood Group: ${bloodGroup}
-Donors in your area have been notified.
-    `.trim()
-};
 
 /**
- * Send emergency alert to matching donors
- * @param {Array} donors - List of donor objects with phone numbers
- * @param {Object} request - Blood request details
+ * Send emergency alert to donors
  */
-const notifyMatchingDonors = async (donors, request) => {
-    const phoneNumbers = donors
-        .map(d => d.userId?.phone)
-        .filter(phone => phone && phone.length === 10);
-    
-    if (phoneNumbers.length === 0) return [];
-    
-    const message = smsTemplates.emergencyAlert(
-        request.patientName,
-        request.bloodGroup,
-        request.hospitalName,
-        request.contactPerson?.phone
-    );
-    
-    return await sendBulkSMS(phoneNumbers, message);
+const sendEmergencyAlert = async (request, donors) => {
+
+    let result = {
+        notified: donors.length,
+        successful: 0,
+        failed: 0
+    };
+
+    for (let donor of donors) {
+        try {
+
+            let phone = donor.userId?.phone;
+
+if (phone && !phone.startsWith('+')) {
+    phone = `+91${phone}`;
+}
+            if (!phone) continue;
+
+            const message = `🚨 URGENT BLOOD REQUEST
+
+Blood Group Needed: ${request.bloodGroup}
+Hospital: ${request.hospitalName}
+Area: ${request.area}
+City: ${request.city}
+
+Please login and respond immediately.`;
+
+            await sendSMS(phone, message);
+
+            result.successful++;
+
+        } catch (error) {
+            result.failed++;
+        }
+    }
+
+    return result;
 };
 
 module.exports = {
     sendSMS,
-    sendBulkSMS,
-    smsTemplates,
-    notifyMatchingDonors
+    findNearbyDonors,
+    sendEmergencyAlert
 };

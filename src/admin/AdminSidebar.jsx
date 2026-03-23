@@ -1,19 +1,18 @@
 import { Link, useLocation } from "react-router-dom";
-import { FaHome, FaUser, FaSearch, FaPlus, FaList, FaCog } from "react-icons/fa";
-import { useAuth } from "../components/AuthContext"; // Adjust path if needed
+import { FaHome, FaUser, FaSearch, FaPlus } from "react-icons/fa";
+import { useAuth } from "../components/AuthContext";
 import { useNavigate } from "react-router-dom";
-
+import { FaChartPie } from "react-icons/fa";
 
 const AdminSidebar = () => {
   const location = useLocation();
   const { logout } = useAuth();
   const navigate = useNavigate();
 
-const handleLogout = () => {
-  logout();
-  navigate("/login"); // redirect to login after logout
-};
-
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
 
   const isActive = (path) => location.pathname === path;
 
@@ -35,6 +34,17 @@ const handleLogout = () => {
           </Link>
 
           <Link
+            to="/admin/analytics"
+            className={`flex items-center gap-3 px-4 py-2 rounded-md font-medium ${
+              isActive("/admin/analytics")
+               ? "bg-[#fce9e9] text-[#1c0d0d]"
+              : "text-[#522525] hover:bg-[#fce9e9]"
+             }`}
+            >
+            <FaChartPie /> Analytics
+           </Link>
+
+          <Link
             to="/donors"
             className={`flex items-center gap-3 px-4 py-2 rounded-md font-medium ${
               isActive("/donors") ? "bg-[#fce9e9] text-[#1c0d0d]" : "text-[#522525] hover:bg-[#fce9e9]"
@@ -51,6 +61,7 @@ const handleLogout = () => {
           >
             <FaSearch /> Requests
           </Link>
+          
           <Link
             to="/post-request"
             className={`flex items-center gap-3 px-4 py-2 rounded-md font-medium ${
@@ -61,31 +72,29 @@ const handleLogout = () => {
           >
             <FaPlus /> Post Request
           </Link>
-          <Link
-              to="/admin-profile"
-              className={`flex items-center gap-3 px-4 py-2 rounded-md font-medium ${
-                  location.pathname === "/admin-profile" 
-                      ? "bg-[#fce9e9] text-[#1c0d0d]" 
-                      : "text-[#522525] hover:bg-[#fce9e9]"
-              }`}
-          >
-              <FaUser /> My Profile
-          </Link>
           
+          <Link
+            to="/admin-profile"
+            className={`flex items-center gap-3 px-4 py-2 rounded-md font-medium ${
+              location.pathname === "/admin-profile" 
+                ? "bg-[#fce9e9] text-[#1c0d0d]" 
+                : "text-[#522525] hover:bg-[#fce9e9]"
+            }`}
+          >
+            <FaUser /> My Profile
+          </Link>
         </nav>
       </div>
 
       {/* Bottom Items */}
-      {/* Bottom Items */}
-<div className="flex flex-col gap-4">
-  <button
-    onClick={handleLogout}
-    className="flex items-center gap-3 px-4 py-2 rounded-md font-medium text-[#522525] hover:bg-[#fce9e9]"
-  >
-    🚪 Logout
-  </button>
-</div>
-
+      <div className="flex flex-col gap-4">
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-2 rounded-md font-medium text-[#522525] hover:bg-[#fce9e9]"
+        >
+          🚪 Logout
+        </button>
+      </div>
     </aside>
   );
 };

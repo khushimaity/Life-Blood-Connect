@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { BLOOD_GROUPS, GENDER_OPTIONS } from '../constants'; // Add this import
+import { BLOOD_GROUPS, GENDER_OPTIONS } from '../constants';
 
 const DonorRegistration = () => {
   const [formData, setFormData] = useState({
@@ -38,9 +38,37 @@ const DonorRegistration = () => {
     }
   });
 
+  // Location state for emergency alerts
+  const [donorLocation, setDonorLocation] = useState({ lat: null, lng: null });
+  const [locationEnabled, setLocationEnabled] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const { registerDonor } = useAuth();
   const navigate = useNavigate();
+
+  // Get donor's current location for emergency alerts
+  const getDonorLocation = () => {
+    setLocationEnabled(true);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setDonorLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+          toast.success('📍 Location captured! You\'ll receive emergency alerts near you.');
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          setLocationEnabled(false);
+          toast.warning('Could not get location. You can still register, but won\'t receive nearby emergency alerts.');
+        }
+      );
+    } else {
+      toast.warning('Geolocation not supported. You won\'t receive nearby emergency alerts.');
+      setLocationEnabled(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -71,7 +99,6 @@ const DonorRegistration = () => {
       return;
     }
 
-    // Phone number validation
     if (!/^\d{10}$/.test(formData.phone)) {
       toast.error('Phone number must be 10 digits');
       return;
@@ -85,13 +112,19 @@ const DonorRegistration = () => {
     setLoading(true);
 
     try {
-      // Convert age to number
       const dataToSend = {
         ...formData,
-        age: parseInt(formData.age)
+        age: parseInt(formData.age),
+        // Add location coordinates if captured
+        ...(donorLocation.lat && donorLocation.lng && {
+          coordinates: {
+            type: 'Point',
+            coordinates: [donorLocation.lng, donorLocation.lat] // GeoJSON format [longitude, latitude]
+          }
+        })
       };
       
-      console.log('Sending data:', dataToSend); // Debug log
+      console.log('Sending data:', dataToSend);
       
       const result = await registerDonor(dataToSend);
       
@@ -101,7 +134,6 @@ const DonorRegistration = () => {
           navigate('/donor-dashboard');
         }, 2000);
       } else {
-        // Show validation errors
         toast.error(result.message || 'Registration failed. Please check all fields.');
       }
     } catch (error) {
@@ -405,6 +437,36 @@ const DonorRegistration = () => {
             required
             disabled={loading}
           />
+        </div>
+
+        {/* Location for Emergency Alerts */}
+        <div className="md:col-span-2 bg-blue-50 p-4 rounded-lg border border-blue-200">
+          <h3 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+            <span>📍</span> Emergency Alert Location
+          </h3>
+          <p className="text-sm text-blue-600 mb-3">
+            Share your location to receive SMS alerts for blood emergencies near you
+          </p>
+          
+          {!donorLocation.lat ? (
+            <button
+              type="button"
+              onClick={getDonorLocation}
+              disabled={locationEnabled}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
+            >
+              <span>📍</span>
+              {locationEnabled ? 'Getting location...' : 'Share My Location for Alerts'}
+            </button>
+          ) : (
+            <div className="bg-green-100 text-green-700 p-3 rounded flex items-center gap-2">
+              <span>✅</span>
+              <span>Location saved! You'll receive alerts for emergencies near you.</span>
+            </div>
+          )}
+          <p className="text-xs text-gray-500 mt-2">
+            Your location is only used to find nearby blood emergencies. You can skip this and still register.
+          </p>
         </div>
 
         {/* Submit Button */}

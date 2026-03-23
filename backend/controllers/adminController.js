@@ -179,6 +179,48 @@ exports.getDashboardStats = async (req, res) => {
     }
 };
 
+// @desc    Get admin dashboard (simplified version)
+// @route   GET /api/admin/dashboard
+// @access  Private/Admin
+exports.getDashboard = async (req, res) => {
+  try {
+    const totalDonors = await Donor.countDocuments();
+    const availableDonors = await Donor.countDocuments({ isAvailable: true });
+
+    // Blood group distribution
+    const donors = await Donor.find().populate('userId', 'bloodGroup');
+    const bloodGroupDistribution = {};
+
+    donors.forEach(donor => {
+      const bg = donor.userId?.bloodGroup || "Unknown";
+      bloodGroupDistribution[bg] = (bloodGroupDistribution[bg] || 0) + 1;
+    });
+
+    // Monthly donations
+    const donations = await Donation.find();
+    const monthlyDonations = {};
+
+    donations.forEach(donation => {
+      const month = new Date(donation.createdAt).toLocaleString('default', {
+        month: 'short',
+        year: 'numeric'
+      });
+      monthlyDonations[month] = (monthlyDonations[month] || 0) + 1;
+    });
+
+    res.status(200).json({
+      totalDonors,
+      availableDonors,
+      bloodGroupDistribution,
+      monthlyDonations
+    });
+
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // @desc    Get all admin centers
 // @route   GET /api/admin/centers
 // @access  Public

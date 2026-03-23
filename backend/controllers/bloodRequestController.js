@@ -2,7 +2,7 @@ const BloodRequest = require('../models/BloodRequest');
 const Admin = require('../models/Admin');
 const Donor = require('../models/Donor');
 const BloodInventory = require('../models/BloodInventory');
-
+const { findNearbyDonors, sendEmergencyAlert, sendSMS } = require('../utils/sendSMS');
 // Helper function to generate request ID
 const generateRequestId = async () => {
     const lastRequest = await BloodRequest.findOne().sort({ createdAt: -1 });
@@ -82,6 +82,53 @@ exports.createBloodRequest = async (req, res) => {
             }]
         });
 
+        // Send SMS to nearby donors for emergency requests
+        if (priority === 'Emergency') {
+            try {
+                console.log('🚨 EMERGENCY REQUEST - Searching for nearby donors...');
+                console.log("Blood group:", bloodGroup);
+                console.log("Location object:", location);
+
+                const nearbyDonors = await findNearbyDonors(
+                    bloodGroup,
+                    location.coordinates,
+                    10
+                );
+
+                console.log(`📍 Found ${nearbyDonors.length} nearby compatible donors`);
+
+                if (nearbyDonors.length > 0) {
+                    const notificationResult = await sendEmergencyAlert(request, nearbyDonors);
+
+                    request.emergencyNotifications = {
+                        sentAt: new Date(),
+                        donorCount: nearbyDonors.length,
+                        successful: notificationResult.successful,
+                        failed: notificationResult.failed || 0
+                    };
+                    
+                    request.notifiedDonors = notificationResult.successful;
+
+                    await request.save();
+
+                    console.log(`✅ Emergency alert sent to ${notificationResult.successful} donors`);
+                } else {
+                    console.log('⚠️ No nearby compatible donors found');
+                    
+                    request.emergencyNotifications = {
+                        sentAt: new Date(),
+                        donorCount: 0,
+                        successful: 0,
+                        failed: 0
+                    };
+                    
+                    await request.save();
+                }
+            } catch (smsError) {
+                console.error('❌ Error sending emergency SMS:', smsError);
+            }
+        }
+
         res.status(201).json({
             success: true,
             message: 'Blood request created successfully',
@@ -141,6 +188,13 @@ exports.getAllBloodRequests = async (req, res) => {
         const requests = await BloodRequest.find(filter)
             .populate('requestedBy', 'name email phone')
             .populate('hospitalId', 'organizationName location.city')
+            .populate({
+                path: 'acceptedDonors.donorId',
+                populate: {
+                    path: 'userId',
+                    select: 'name phone bloodGroup'
+                }
+            })
             .sort(sort)
             .limit(parseInt(limit))
             .skip((parseInt(page) - 1) * parseInt(limit));
@@ -149,21 +203,23 @@ exports.getAllBloodRequests = async (req, res) => {
 
         // Format response for frontend
         const formattedRequests = requests.map(request => ({
-            requestId: request.requestId,
-            patientName: request.patientName,
-            bloodGroup: request.bloodGroup,
-            quantity: request.requiredUnits,
-            fulfilled: request.fulfilledUnits,
-            remaining: request.requiredUnits - request.fulfilledUnits,
-            hospital: request.hospitalName,
-            location: `${request.location?.city || ''}`,
-            priority: request.priority,
-            status: request.status,
-            neededBy: request.neededBy,
-            createdAt: request.createdAt,
-            contact: request.contactPerson?.phone,
-            reason: request.reason
-        }));
+    requestId: request.requestId,
+    patientName: request.patientName,
+    bloodGroup: request.bloodGroup,
+    quantity: request.requiredUnits,
+    fulfilled: request.fulfilledUnits,
+    remaining: request.requiredUnits - request.fulfilledUnits,
+    hospital: request.hospitalName,
+    location: `${request.location?.city || ''}`,
+    priority: request.priority,
+    status: request.status,
+    neededBy: request.neededBy,
+    createdAt: request.createdAt,
+    contact: request.contactPerson?.phone,
+    reason: request.reason,
+    acceptedDonors: request.acceptedDonors || []
+}));
+
 
         res.status(200).json({
             success: true,
@@ -182,6 +238,147 @@ exports.getAllBloodRequests = async (req, res) => {
     }
 };
 
+// @desc    Accept a request (donor volunteers)
+// @route   POST /api/blood-requests/accept
+// @access  Private/Donor
+exports.acceptRequest = async (req, res) => {
+  try {
+    const { requestId } = req.body;
+
+    const request = await BloodRequest.findById(requestId);
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "Request not found"
+      });
+    }
+
+    // Prevent double accept
+    const alreadyAccepted = request.acceptedDonors.find(
+      d => d.donorId.toString() === req.user.id
+    );
+
+    if (alreadyAccepted) {
+      return res.status(400).json({
+        success: false,
+        message: "Already accepted"
+      });
+    }
+
+    request.acceptedDonors.push({
+      donorId: req.user.id
+    });
+
+    await request.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Request accepted"
+    });
+
+  } catch (error) {
+    console.error("Accept request error:", error);
+    res.status(500).json({ success: false });
+  }
+};
+
+// @desc    Select a donor for request
+// @route   POST /api/blood-requests/select-donor
+// @access  Private/Admin
+exports.selectDonor = async (req, res) => {
+  try {
+    const donorId = req.body.donorId;
+
+    if (!donorId) {
+      return res.status(400).json({
+        success: false,
+        message: "Donor ID is required"
+      });
+    }
+
+    const request = await BloodRequest.findOne({
+      requestId: req.params.id
+    });
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "Request not found"
+      });
+    }
+
+    const donor = await Donor.findById(donorId).populate("userId");
+
+    if (!donor) {
+      return res.status(404).json({
+        success: false,
+        message: "Donor not found"
+      });
+    }
+
+    // ✅ Update request
+    request.selectedDonor = donorId;
+    request.status = "Approved";
+    await request.save();
+
+    // ✅ Notify selected donor (safe)
+    try {
+      let selectedPhone = donor.userId?.phone;
+
+      if (selectedPhone && !selectedPhone.startsWith("+")) {
+        selectedPhone = `+91${selectedPhone}`;
+      }
+
+      if (selectedPhone) {
+        await sendSMS(
+          selectedPhone,
+          `🎉 You have been selected for Blood Request ${request.requestId}. Please contact the hospital immediately.`
+        );
+      }
+    } catch (err) {
+      console.log("Selected donor SMS failed:", err.message);
+    }
+
+    // ❌ Notify other accepted donors (safe)
+    for (let accepted of request.acceptedDonors) {
+      if (accepted.donorId.toString() === donorId.toString()) continue;
+
+      try {
+        const otherDonor = await Donor.findById(
+          accepted.donorId
+        ).populate("userId");
+
+        let phone = otherDonor?.userId?.phone;
+
+        if (phone && !phone.startsWith("+")) {
+          phone = `+91${phone}`;
+        }
+
+        if (phone) {
+          await sendSMS(
+            phone,
+            `Update for Blood Request ${request.requestId}: Another donor has been selected. Thank you for volunteering ❤️`
+          );
+        }
+      } catch (err) {
+        console.log("Other donor SMS failed:", err.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      selectedDonor: donorId
+    });
+
+  } catch (error) {
+    console.error("Select donor error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
 // @desc    Get single blood request
 // @route   GET /api/blood-requests/:id
 // @access  Private
@@ -190,9 +387,11 @@ exports.getBloodRequest = async (req, res) => {
         const request = await BloodRequest.findById(req.params.id)
             .populate('requestedBy', 'name email phone')
             .populate('hospitalId', 'organizationName location contactInfo')
-            .populate('donors.donorId', 'userId')
-            .populate('donors.donorId.userId', 'name phone bloodGroup');
-
+            .populate('acceptedDonors.donorId')
+            .populate('acceptedDonors.donorId.userId', 'name phone bloodGroup')
+            .populate('selectedDonor')
+            .populate('selectedDonor.userId', 'name phone bloodGroup');
+            
         if (!request) {
             return res.status(404).json({
                 success: false,
@@ -358,6 +557,10 @@ exports.assignDonorToRequest = async (req, res) => {
         }
 
         // Add donor to request
+        if (!request.donors) {
+            request.donors = [];
+        }
+        
         request.donors.push({
             donorId: donor._id,
             unitsDonated: unitsDonated || 1,
@@ -786,4 +989,49 @@ exports.acceptBloodRequest = async (req, res) => {
             error: error.message
         });
     }
+};
+
+exports.getAnalytics = async (req, res) => {
+  try {
+    const inventory = await BloodInventory.find().lean();
+    console.log("Inventory Count:", inventory.length);
+    console.log("Inventory Data:", inventory);
+
+    const bloodGroups = {};
+
+    inventory.forEach((item) => {
+      if (!bloodGroups[item.bloodGroup]) {
+        bloodGroups[item.bloodGroup] = 0;
+      }
+      bloodGroups[item.bloodGroup] += item.availableUnits;
+    });
+
+    const donors = await Donor.find();
+
+    let available = 0;
+    let unavailable = 0;
+
+    donors.forEach((donor) => {
+      if (donor.isAvailable) {
+        available++;
+      } else {
+        unavailable++;
+      }
+    });
+
+    return res.status(200).json({
+      bloodGroups,
+      donors: {
+        available,
+        unavailable,
+      },
+    });
+
+  } catch (error) {
+    console.error("Analytics error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };

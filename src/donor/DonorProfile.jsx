@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../components/AuthContext';
 import DonorDashboardPage from './DonorDashboardPage';
 import { FaUser, FaEnvelope, FaPhone, FaTint, FaGraduationCap, FaMapMarkerAlt, FaCalendarAlt, FaHeart, FaShieldAlt, FaEdit, FaSave, FaTimes } from 'react-icons/fa';
-import axios from 'axios';
+import { donorAPI } from "../api/services";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -21,11 +21,8 @@ const DonorProfile = () => {
     const fetchProfile = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
             
-            const response = await axios.get('http://localhost:5000/api/donors/profile/me', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await donorAPI.getProfile();
             
             if (response.data.success) {
                 setProfile(response.data.donor);
@@ -65,11 +62,7 @@ const DonorProfile = () => {
         setUpdating(true);
         
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.put('http://localhost:5000/api/donors/profile', 
-                formData,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const response = await donorAPI.updateProfile(formData);
             
             if (response.data.success) {
                 setProfile(response.data.donor);

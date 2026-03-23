@@ -18,6 +18,10 @@ export const donorAPI = {
   getDonationHistory: () => axiosInstance.get('/donors/donation-history'),
   findDonors: (params) => axiosInstance.get('/donors/find', { params }),
   updateAvailability: (data) => axiosInstance.put('/donors/availability', data),
+  getLeaderboard: () => axiosInstance.get('/donors/leaderboard'),
+  markDonated: (data) => axiosInstance.put('/donors/mark-donated', data),
+  getDonorCountBefore: (donorId) => axiosInstance.get('/donors/count-before', { params: { donorId } }),
+  getNearbyDonors: (params) => axiosInstance.get('/donors/nearby', { params }),
 };
 
 // Blood Request Services
@@ -32,15 +36,20 @@ export const bloodRequestAPI = {
   updateStatus: (id, data) => axiosInstance.put(`/blood-requests/${id}/status`, data),
   cancel: (id) => axiosInstance.put(`/blood-requests/${id}/cancel`),
   assignDonor: (id, data) => axiosInstance.post(`/blood-requests/${id}/assign-donor`, data),
+  selectDonor: (id, donorId) => axiosInstance.put(`/blood-requests/select-donor/${id}`, { donorId }),
 };
 
 // Admin Services
 export const adminAPI = {
   getDashboard: () => axiosInstance.get('/admin/dashboard'),
+  getDashboardStats: () => axiosInstance.get('/admin/dashboard-stats'),
   getCenters: (params) => axiosInstance.get('/admin/centers', { params }),
   getCenterDetails: (id) => axiosInstance.get(`/admin/center/${id}`),
+  getAdminProfile: () => axiosInstance.get('/admin/profile'),
   updateProfile: (data) => axiosInstance.put('/admin/profile', data),
   searchBlood: (params) => axiosInstance.get('/admin/search-blood', { params }),
+  getAnalytics: () => axiosInstance.get('/admin/analytics'),
+  verifyCenter: (id, notes) => axiosInstance.put(`/admin/verify/${id}`, { notes }),
 };
 
 // Inventory Services
@@ -61,4 +70,26 @@ export const donationAPI = {
   getDonorHistory: () => axiosInstance.get('/donations/donor/history'),
   updateTestResults: (id, data) => axiosInstance.put(`/donations/${id}/test-results`, data),
   getStats: () => axiosInstance.get('/donations/stats'),
+};
+
+// Emergency Services
+export const emergencyAPI = {
+  getAll: (params) => axiosInstance.get('/emergency', { params }),
+  getById: (id) => axiosInstance.get(`/emergency/${id}`),
+  create: (data) => axiosInstance.post('/emergency', data),
+  updateStatus: (id, status) => axiosInstance.put(`/emergency/${id}/status`, { status }),
+  respond: (id) => axiosInstance.post(`/emergency/${id}/respond`),
+  debug: (params) => axiosInstance.get('/emergency/debug', { params }),
+};
+
+// College Admin Services
+export const collegeAdminAPI = {
+  getDashboard: () => axiosInstance.get('/college-admin/dashboard'),
+  getProfile: () => axiosInstance.get('/college-admin/profile'),
+  updateProfile: (data) => axiosInstance.put('/college-admin/profile', data),
+  createDonationDrive: (data) => axiosInstance.post('/college-admin/drives', data),
+  getDonationDrives: (params) => axiosInstance.get('/college-admin/drives', { params }),
+  updateDonationDrive: (id, data) => axiosInstance.put(`/college-admin/drives/${id}`, data),
+  deleteDonationDrive: (id) => axiosInstance.delete(`/college-admin/drives/${id}`),
+  getPublicDrives: (params) => axiosInstance.get('/college-admin/public-drives', { params }),
 };

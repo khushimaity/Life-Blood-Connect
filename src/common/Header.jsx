@@ -19,42 +19,53 @@ const Header = () => {
             Home
           </button>
         </Link>
+
         <Link to="/home" state={{ scrollTo: "about" }}>
           <button className="px-4 py-2 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition">
             About Us
           </button>
         </Link>
+
         <Link to="/home" state={{ scrollTo: "contact" }}>
           <button className="px-4 py-2 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition">
             Contact
           </button>
         </Link>
 
-      {isLoggedIn ? (
-        <Link to={user?.role === "admin" ? "/admin-dashboard" : "/donor-dashboard"}>
+        {/* Leaderboard button */}
+        <Link to="/leaderboard">
           <button className="px-4 py-2 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition">
-            Dashboard
+            Leaderboard
           </button>
         </Link>
-      ) : (
-        <>
-          <Link to="/register">
+
+        {isLoggedIn ? (
+          <Link to={user?.role === "admin" ? "/admin-dashboard" : "/donor-dashboard"}>
             <button className="px-4 py-2 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition">
-              Donor Registration
+              Dashboard
             </button>
           </Link>
-          <Link to="/admin-registration">
-            <button className="px-4 py-2 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition">
-              Admin Registration
-            </button>
-          </Link>
-          <Link to="/login">
-            <button className="px-4 py-2 rounded-md font-semibold bg-gray-100 text-black hover:shadow-md transition">
-              Login
-            </button>
-          </Link>
-        </>
-      )}
+        ) : (
+          <>
+            <Link to="/register">
+              <button className="px-4 py-2 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition">
+                Donor Registration
+              </button>
+            </Link>
+
+            <Link to="/admin-registration">
+              <button className="px-4 py-2 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition">
+                Admin Registration
+              </button>
+            </Link>
+
+            <Link to="/login">
+              <button className="px-4 py-2 rounded-md font-semibold bg-gray-100 text-black hover:shadow-md transition">
+                Login
+              </button>
+            </Link>
+          </>
+        )}
       </div>
     </header>
   );

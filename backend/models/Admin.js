@@ -7,7 +7,7 @@ const adminSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
-    
+
     // Organization Information
     organizationName: {
         type: String,
@@ -17,7 +17,7 @@ const adminSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Please enter admin name']
     },
-    
+
     // Center Details
     centerType: {
         type: String,
@@ -29,7 +29,7 @@ const adminSchema = new mongoose.Schema({
         enum: ['Government', 'Private', 'Trust', 'Corporate'],
         default: 'Private'
     },
-    
+
     // Location
     location: {
         address: String,
@@ -49,7 +49,7 @@ const adminSchema = new mongoose.Schema({
             }
         }
     },
-    
+
     // Contact Information
     contactInfo: {
         phone: [String],
@@ -58,32 +58,32 @@ const adminSchema = new mongoose.Schema({
         website: String,
         fax: String
     },
-    
+
     // License & Registration
     licenseNumber: {
-    type: String,
-    unique: false,
-    sparse: true,  // ← ADD THIS - allows multiple null values
-    default: null
+        type: String,
+        unique: true,
+        sparse: true,
+        default: null
     },
     registrationNumber: String,
     registrationAuthority: String,
     validFrom: Date,
     validUntil: Date,
-    
+
     // Facilities
     facilities: [{
         name: String,
         available: Boolean,
         description: String
     }],
-    
+
     // Services Offered
     services: [{
         type: String,
         enum: ['Blood Donation', 'Blood Testing', 'Blood Storage', 'Emergency Service', 'Home Collection', 'Camps']
     }],
-    
+
     // Blood Storage Capacity
     storageCapacity: {
         totalUnits: Number,
@@ -92,7 +92,7 @@ const adminSchema = new mongoose.Schema({
         deepFreezers: Number,
         plateletIncubators: Number
     },
-    
+
     // Staff Information
     staffCount: {
         doctors: Number,
@@ -100,7 +100,7 @@ const adminSchema = new mongoose.Schema({
         technicians: Number,
         administrators: Number
     },
-    
+
     // Operating Hours
     operatingHours: {
         monday: { open: String, close: String },
@@ -112,7 +112,7 @@ const adminSchema = new mongoose.Schema({
         sunday: { open: String, close: String },
         emergency24x7: { type: Boolean, default: false }
     },
-    
+
     // Verification Status
     isVerified: {
         type: Boolean,
@@ -123,7 +123,8 @@ const adminSchema = new mongoose.Schema({
         ref: 'User'
     },
     verifiedAt: Date,
-    
+    verificationNotes: String,
+
     // Documents
     documents: [{
         type: { type: String, enum: ['License', 'Registration', 'Certificate', 'Other'] },
@@ -131,7 +132,7 @@ const adminSchema = new mongoose.Schema({
         uploadedAt: Date,
         verified: { type: Boolean, default: false }
     }],
-    
+
     // Statistics
     stats: {
         totalRequests: { type: Number, default: 0 },
@@ -141,7 +142,7 @@ const adminSchema = new mongoose.Schema({
         rating: { type: Number, default: 0, min: 0, max: 5 },
         reviews: { type: Number, default: 0 }
     },
-    
+
     // Settings
     settings: {
         autoApproveRequests: { type: Boolean, default: false },
@@ -150,15 +151,11 @@ const adminSchema = new mongoose.Schema({
             sms: { type: Boolean, default: true },
             push: { type: Boolean, default: true }
         },
-        requestThreshold: { type: Number, default: 10 } // Units below which alert is sent
+        requestThreshold: { type: Number, default: 10 }
     },
-    
-    // Timestamps
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: Date
+
+    description: String
+
 }, {
     timestamps: true,
     toJSON: { virtuals: true },
@@ -167,18 +164,18 @@ const adminSchema = new mongoose.Schema({
 
 // Virtual for full address
 adminSchema.virtual('fullAddress').get(function() {
-    return `${this.location.address || ''}, ${this.location.city || ''}, ${this.location.district || ''}, ${this.location.state || ''} - ${this.location.pincode || ''}`.trim();
+    return `${this.location?.address || ''}, ${this.location?.city || ''}, ${this.location?.district || ''}, ${this.location?.state || ''} ${this.location?.pincode || ''}`.trim().replace(/^, |, $/g, '');
 });
 
 // Virtual for isOpen status
 adminSchema.virtual('isOpen').get(function() {
-    if (this.operatingHours.emergency24x7) return true;
+    if (this.operatingHours?.emergency24x7) return true;
     
     const now = new Date();
     const day = now.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
     const currentTime = now.getHours() * 100 + now.getMinutes();
     
-    if (this.operatingHours[day]) {
+    if (this.operatingHours && this.operatingHours[day]) {
         const openTime = this.operatingHours[day].open;
         const closeTime = this.operatingHours[day].close;
         
@@ -192,7 +189,7 @@ adminSchema.virtual('isOpen').get(function() {
     return false;
 });
 
-// Index for geospatial queries
+// Indexes
 adminSchema.index({ "location.coordinates": "2dsphere" });
 adminSchema.index({ centerType: 1, "location.city": 1 });
 adminSchema.index({ isVerified: 1 });

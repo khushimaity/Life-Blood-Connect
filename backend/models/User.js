@@ -37,7 +37,7 @@ const userSchema = new mongoose.Schema({
     // Role Management
     role: {
         type: String,
-        enum: ['donor', 'admin', 'hospital_admin'],
+        enum: ['donor', 'admin', 'hospital_admin', 'college_admin'],
         default: 'donor'
     },
     
@@ -79,6 +79,13 @@ userSchema.virtual('donorProfile', {
 
 userSchema.virtual('adminProfile', {
     ref: 'Admin',
+    localField: '_id',
+    foreignField: 'userId',
+    justOne: true
+});
+
+userSchema.virtual('collegeAdminProfile', {
+    ref: 'CollegeAdmin',
     localField: '_id',
     foreignField: 'userId',
     justOne: true
